@@ -1,0 +1,46 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { VipPlan, VipPlanDocument } from './schemas/vip-plan.schema';
+import { CreateVipPlanDto, UpdateVipPlanDto } from './dtos';
+
+@Injectable()
+export class VipPlansService {
+  constructor(
+    @InjectModel(VipPlan.name) private vipPlanModel: Model<VipPlanDocument>,
+  ) {}
+
+  async create(dto: CreateVipPlanDto): Promise<VipPlanDocument> {
+    const plan = new this.vipPlanModel(dto);
+    return plan.save();
+  }
+
+  async findAll(onlyActive = false) {
+    const filter: any = { deleted: false };
+    if (onlyActive) {
+      filter.isActive = true;
+    }
+    return this.vipPlanModel.find(filter).sort({ durationDays: 1 }).exec();
+  }
+
+  async findById(id: string): Promise<VipPlanDocument> {
+    const plan = await this.vipPlanModel.findOne({ _id: id, deleted: false }).exec();
+    if (!plan) {
+      throw new NotFoundException('پلن اشتراک VIP مورد نظر یافت نشد.');
+    }
+    return plan;
+  }
+
+  async update(id: string, dto: UpdateVipPlanDto): Promise<VipPlanDocument> {
+    const plan = await this.findById(id);
+    Object.assign(plan, dto);
+    return plan.save();
+  }
+
+  async softDelete(id: string): Promise<{ success: boolean; message: string }> {
+    const plan = await this.findById(id);
+    plan.deleted = true;
+    await plan.save();
+    return { success: true, message: 'پلن VIP با موفقیت حذف شد.' };
+  }
+}

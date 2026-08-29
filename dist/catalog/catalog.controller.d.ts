@@ -1,0 +1,92 @@
+import { ProductsService } from '../products/products.service';
+import { CategoriesService } from '../categories/categories.service';
+import { VipPlansService } from '../vip-plans/vip-plans.service';
+import { PageSectionsService } from '../page-sections/page-sections.service';
+import { ProductQueryDto } from '../products/dtos';
+export declare class CatalogController {
+    private readonly productsService;
+    private readonly categoriesService;
+    private readonly vipPlansService;
+    private readonly pageSectionsService;
+    constructor(productsService: ProductsService, categoriesService: CategoriesService, vipPlansService: VipPlansService, pageSectionsService: PageSectionsService);
+    getProducts(query: ProductQueryDto): Promise<{
+        items: {
+            _id: any;
+            title: any;
+            titleEn: any;
+            slug: any;
+            shortDescription: any;
+            price: any;
+            discountPrice: any;
+            images: any;
+            categories: any;
+            attributes: any;
+            stockCount: any;
+            inStock: any;
+            isVipOnly: any;
+            isFeatured: any;
+            rating: any;
+            salesCount: any;
+            createdAt: any;
+        }[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+    }>;
+    getProductBySlug(slug: string): Promise<{
+        description: any;
+        viewsCount: any;
+        updatedAt: any;
+        _id: any;
+        title: any;
+        titleEn: any;
+        slug: any;
+        shortDescription: any;
+        price: any;
+        discountPrice: any;
+        images: any;
+        categories: any;
+        attributes: any;
+        stockCount: any;
+        inStock: any;
+        isVipOnly: any;
+        isFeatured: any;
+        rating: any;
+        salesCount: any;
+        createdAt: any;
+    }>;
+    getCategories(): Promise<{
+        _id: any;
+        name: any;
+        nameEn: any;
+        slug: any;
+        description: any;
+        image: any;
+        icon: any;
+        order: any;
+        isFeatured: any;
+    }[]>;
+    getVipPlans(): Promise<{
+        _id: any;
+        title: any;
+        titleEn: any;
+        description: any;
+        price: any;
+        durationDays: any;
+        discountPercent: any;
+        perks: any;
+        badgeColor: any;
+        isPopular: any;
+    }[]>;
+    getPageSections(): Promise<{
+        _id: any;
+        sectionKey: any;
+        title: any;
+        isVisible: any;
+        isVipOnly: any;
+        order: any;
+        banners: any;
+        config: any;
+    }[]>;
+}
