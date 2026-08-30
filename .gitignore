@@ -1,1 +1,73 @@
-node_modules
+# ==========================================
+# HatefAroma Backend (.gitignore) - NestJS
+# ==========================================
+
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm
+.yarn/
+.pnp
+.pnp.js
+
+# Build Outputs & Caches
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+.cache/
+
+# Environment & Secrets (Never commit actual env keys)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+
+# Uploaded Files & Temporary Storage
+public/uploads/*
+!public/uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
+tmp/
+temp/
+
+# Logs & Diagnostics
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# IDE & Editor Configurations
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.sublime-project
+*.sublime-workspace
