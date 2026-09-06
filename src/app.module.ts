@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
+import { BrandsModule } from './brands/brands.module';
 import { CategoriesModule } from './categories/categories.module';
 import { AttributesModule } from './attributes/attributes.module';
 import { ProductsModule } from './products/products.module';
@@ -34,6 +35,7 @@ import { SeedModule } from './seed/seed.module';
     }),
     UsersModule,
     AuthModule,
+    BrandsModule,
     CategoriesModule,
     AttributesModule,
     ProductsModule,

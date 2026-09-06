@@ -1,10 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document } from 'mongoose';
 
-export type CategoryDocument = Category & Document;
+export type BrandDocument = Brand & Document;
 
 @Schema({ timestamps: true })
-export class Category {
+export class Brand {
   @Prop({ required: true, trim: true })
   name!: string;
 
@@ -14,17 +14,14 @@ export class Category {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   slug!: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Category', default: null, required: false })
-  parentId?: Types.ObjectId | null;
-
   @Prop({ default: '' })
   description?: string;
 
   @Prop({ default: '' })
-  image?: string;
+  logo?: string;
 
   @Prop({ default: '' })
-  icon?: string;
+  image?: string;
 
   @Prop({ default: 0 })
   order!: number;
@@ -36,8 +33,7 @@ export class Category {
   deleted!: boolean;
 }
 
-export const CategorySchema = SchemaFactory.createForClass(Category);
-CategorySchema.index({ slug: 1 });
-CategorySchema.index({ parentId: 1 });
-CategorySchema.index({ deleted: 1 });
-CategorySchema.index({ order: 1 });
+export const BrandSchema = SchemaFactory.createForClass(Brand);
+BrandSchema.index({ slug: 1 });
+BrandSchema.index({ deleted: 1 });
+BrandSchema.index({ order: 1 });

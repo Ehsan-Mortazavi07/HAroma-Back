@@ -1,7 +1,7 @@
 import { IsNotEmpty, IsOptional, IsString, IsNumber, IsBoolean } from 'class-validator';
 
-export class CreateCategoryDto {
-  @IsNotEmpty({ message: 'نام دسته‌بندی الزامی است.' })
+export class CreateBrandDto {
+  @IsNotEmpty({ message: 'نام برند الزامی است.' })
   @IsString()
   name!: string;
 
@@ -9,13 +9,9 @@ export class CreateCategoryDto {
   @IsString()
   nameEn?: string;
 
-  @IsNotEmpty({ message: 'اسلاگ دسته‌بندی الزامی است.' })
+  @IsNotEmpty({ message: 'اسلاگ برند الزامی است.' })
   @IsString()
   slug!: string;
-
-  @IsOptional()
-  @IsString()
-  parentId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -23,11 +19,11 @@ export class CreateCategoryDto {
 
   @IsOptional()
   @IsString()
-  image?: string;
+  logo?: string;
 
   @IsOptional()
   @IsString()
-  icon?: string;
+  image?: string;
 
   @IsOptional()
   @IsNumber()
@@ -38,7 +34,7 @@ export class CreateCategoryDto {
   isFeatured?: boolean;
 }
 
-export class UpdateCategoryDto {
+export class UpdateBrandDto {
   @IsOptional()
   @IsString()
   name?: string;
@@ -53,19 +49,15 @@ export class UpdateCategoryDto {
 
   @IsOptional()
   @IsString()
-  parentId?: string | null;
-
-  @IsOptional()
-  @IsString()
   description?: string;
 
   @IsOptional()
   @IsString()
-  image?: string;
+  logo?: string;
 
   @IsOptional()
   @IsString()
-  icon?: string;
+  image?: string;
 
   @IsOptional()
   @IsNumber()

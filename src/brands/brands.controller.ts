@@ -1,0 +1,78 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { BrandsService } from './brands.service';
+import { CreateBrandDto, UpdateBrandDto } from './dtos';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '../common/enums';
+
+@Controller()
+export class BrandsController {
+  constructor(private readonly brandsService: BrandsService) {}
+
+  // Public Endpoints
+  @Get('brands')
+  async getAllBrands(
+    @Query('q') q?: string,
+    @Query('featuredOnly') featuredOnly?: string,
+  ) {
+    return this.brandsService.findAll({
+      q,
+      featuredOnly: featuredOnly === 'true',
+    });
+  }
+
+  @Get('brands/:slug')
+  async getBrandBySlug(@Param('slug') slug: string) {
+    return this.brandsService.findBySlug(slug);
+  }
+
+  // Admin & Editor Endpoints
+  @Get('admin/brands')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminListBrands(@Query('q') q?: string) {
+    return this.brandsService.findAll({ q });
+  }
+
+  @Get('admin/brands/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminGetBrand(@Param('id') id: string) {
+    return this.brandsService.findById(id);
+  }
+
+  @Post('admin/brands')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminCreateBrand(@Body() dto: CreateBrandDto) {
+    return this.brandsService.create(dto);
+  }
+
+  @Patch('admin/brands/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminUpdateBrand(
+    @Param('id') id: string,
+    @Body() dto: UpdateBrandDto,
+  ) {
+    return this.brandsService.update(id, dto);
+  }
+
+  @Delete('admin/brands/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminDeleteBrand(@Param('id') id: string) {
+    return this.brandsService.softDelete(id);
+  }
+}

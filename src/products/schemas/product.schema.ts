@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Category } from '../../categories/schemas/category.schema';
 import { Attribute } from '../../attributes/schemas/attribute.schema';
+import { Brand } from '../../brands/schemas/brand.schema';
 
 export type ProductDocument = Product & Document;
 
@@ -18,6 +19,9 @@ export class ProductAttributeValue {
 
   @Prop({ required: true, trim: true })
   value!: string;
+
+  @Prop({ type: [String], default: [] })
+  values?: string[];
 
   @Prop({ trim: true, default: '' })
   unit?: string;
@@ -92,6 +96,9 @@ export class Product {
   })
   categories!: Types.ObjectId[];
 
+  @Prop({ type: Types.ObjectId, ref: Brand.name, default: null, required: false })
+  brand?: Types.ObjectId | null;
+
   @Prop({
     type: [ProductAttributeValueSchema],
     default: [],
@@ -132,6 +139,7 @@ export class Product {
 export const ProductSchema = SchemaFactory.createForClass(Product);
 ProductSchema.index({ slug: 1 });
 ProductSchema.index({ categories: 1 });
+ProductSchema.index({ brand: 1 });
 ProductSchema.index({ isVipOnly: 1 });
 ProductSchema.index({ isFeatured: 1 });
 ProductSchema.index({ price: 1 });

@@ -27,6 +27,11 @@ export class ProductAttributeInputDto {
   value!: string;
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  values?: string[];
+
+  @IsOptional()
   @IsString()
   unit?: string;
 }
@@ -113,6 +118,10 @@ export class CreateProductDto {
   categories?: string[];
 
   @IsOptional()
+  @IsString()
+  brand?: string | null;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ProductAttributeInputDto)
@@ -189,6 +198,10 @@ export class UpdateProductDto {
   categories?: string[];
 
   @IsOptional()
+  @IsString()
+  brand?: string | null;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ProductAttributeInputDto)
@@ -229,6 +242,9 @@ export class ProductQueryDto {
 
   @IsOptional()
   category?: string;
+
+  @IsOptional()
+  brand?: string;
 
   @IsOptional()
   isVipOnly?: string;

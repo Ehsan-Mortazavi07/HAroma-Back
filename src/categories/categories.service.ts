@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
 import { CreateCategoryDto, UpdateCategoryDto } from './dtos';
 
@@ -19,14 +19,20 @@ export class CategoriesService {
       throw new ConflictException('دسته‌بندی با این اسلاگ از قبل وجود دارد.');
     }
 
+    const parentId =
+      createCategoryDto.parentId && Types.ObjectId.isValid(createCategoryDto.parentId)
+        ? new Types.ObjectId(createCategoryDto.parentId)
+        : null;
+
     const category = new this.categoryModel({
       ...createCategoryDto,
       slug: createCategoryDto.slug.toLowerCase(),
+      parentId,
     });
     return category.save();
   }
 
-  async findAll(query?: { q?: string; featuredOnly?: boolean }) {
+  async findAll(query?: { q?: string; featuredOnly?: boolean; rootOnly?: boolean }) {
     const filter: any = { deleted: false };
     if (query?.q) {
       filter.$or = [
@@ -38,12 +44,22 @@ export class CategoriesService {
     if (query?.featuredOnly) {
       filter.isFeatured = true;
     }
+    if (query?.rootOnly) {
+      filter.parentId = null;
+    }
 
-    return this.categoryModel.find(filter).sort({ order: 1, createdAt: -1 }).exec();
+    return this.categoryModel
+      .find(filter)
+      .populate('parentId', 'name nameEn slug')
+      .sort({ order: 1, createdAt: -1 })
+      .exec();
   }
 
   async findById(id: string): Promise<CategoryDocument> {
-    const category = await this.categoryModel.findOne({ _id: id, deleted: false }).exec();
+    const category = await this.categoryModel
+      .findOne({ _id: id, deleted: false })
+      .populate('parentId', 'name nameEn slug')
+      .exec();
     if (!category) {
       throw new NotFoundException('دسته‌بندی مورد نظر یافت نشد.');
     }
@@ -51,10 +67,13 @@ export class CategoriesService {
   }
 
   async findBySlug(slug: string): Promise<CategoryDocument> {
-    const category = await this.categoryModel.findOne({
-      slug: slug.toLowerCase(),
-      deleted: false,
-    }).exec();
+    const category = await this.categoryModel
+      .findOne({
+        slug: slug.toLowerCase(),
+        deleted: false,
+      })
+      .populate('parentId', 'name nameEn slug')
+      .exec();
     if (!category) {
       throw new NotFoundException('دسته‌بندی مورد نظر یافت نشد.');
     }
@@ -75,7 +94,15 @@ export class CategoriesService {
       updateCategoryDto.slug = updateCategoryDto.slug.toLowerCase();
     }
 
-    Object.assign(category, updateCategoryDto);
+    const payload: any = { ...updateCategoryDto };
+    if (updateCategoryDto.parentId !== undefined) {
+      payload.parentId =
+        updateCategoryDto.parentId && Types.ObjectId.isValid(updateCategoryDto.parentId)
+          ? new Types.ObjectId(updateCategoryDto.parentId)
+          : null;
+    }
+
+    Object.assign(category, payload);
     return category.save();
   }
 
