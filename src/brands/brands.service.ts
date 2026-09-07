@@ -26,8 +26,11 @@ export class BrandsService {
     return brand.save();
   }
 
-  async findAll(query?: { q?: string; featuredOnly?: boolean }) {
+  async findAll(query?: { q?: string; featuredOnly?: boolean; includeInactive?: boolean }) {
     const filter: any = { deleted: false };
+    if (!query?.includeInactive) {
+      filter.isActive = { $ne: false };
+    }
     if (query?.q) {
       filter.$or = [
         { name: { $regex: query.q, $options: 'i' } },
@@ -54,6 +57,7 @@ export class BrandsService {
     const brand = await this.brandModel.findOne({
       slug: slug.toLowerCase(),
       deleted: false,
+      isActive: { $ne: false },
     }).exec();
     if (!brand) {
       throw new NotFoundException('برند مورد نظر یافت نشد.');

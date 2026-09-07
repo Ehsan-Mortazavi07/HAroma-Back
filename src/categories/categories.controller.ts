@@ -42,7 +42,7 @@ export class CategoriesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async adminListCategories(@Query('q') q?: string) {
-    return this.categoriesService.findAll({ q });
+    return this.categoriesService.findAll({ q, includeInactive: true });
   }
 
   @Get('admin/categories/:id')

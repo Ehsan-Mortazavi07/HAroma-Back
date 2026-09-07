@@ -132,6 +132,9 @@ export class Product {
   @Prop({ default: false })
   isFeatured!: boolean;
 
+  @Prop({ default: true })
+  isPublished!: boolean;
+
   @Prop({ default: false })
   deleted!: boolean;
 }
@@ -142,6 +145,7 @@ ProductSchema.index({ categories: 1 });
 ProductSchema.index({ brand: 1 });
 ProductSchema.index({ isVipOnly: 1 });
 ProductSchema.index({ isFeatured: 1 });
+ProductSchema.index({ isPublished: 1 });
 ProductSchema.index({ price: 1 });
 ProductSchema.index({ deleted: 1 });
 ProductSchema.index({ createdAt: -1 });

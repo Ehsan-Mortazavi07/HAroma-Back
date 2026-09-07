@@ -32,8 +32,11 @@ export class CategoriesService {
     return category.save();
   }
 
-  async findAll(query?: { q?: string; featuredOnly?: boolean; rootOnly?: boolean }) {
+  async findAll(query?: { q?: string; featuredOnly?: boolean; rootOnly?: boolean; includeInactive?: boolean }) {
     const filter: any = { deleted: false };
+    if (!query?.includeInactive) {
+      filter.isActive = { $ne: false };
+    }
     if (query?.q) {
       filter.$or = [
         { name: { $regex: query.q, $options: 'i' } },
@@ -71,6 +74,7 @@ export class CategoriesService {
       .findOne({
         slug: slug.toLowerCase(),
         deleted: false,
+        isActive: { $ne: false },
       })
       .populate('parentId', 'name nameEn slug')
       .exec();

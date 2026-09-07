@@ -33,6 +33,33 @@ export class User {
   @Prop({ default: '' })
   avatar?: string;
 
+  @Prop({ type: String, default: null })
+  birthDate?: string | null;
+
+  @Prop({ trim: true, default: '' })
+  province?: string;
+
+  @Prop({ trim: true, default: '' })
+  city?: string;
+
+  @Prop({ trim: true, default: '' })
+  address?: string;
+
+  @Prop({ trim: true, default: '' })
+  postalCode?: string;
+
+  @Prop({ trim: true, default: '' })
+  buildingNumber?: string;
+
+  @Prop({ trim: true, default: '' })
+  unit?: string;
+
+  @Prop({ trim: true, default: '' })
+  recipientName?: string;
+
+  @Prop({ trim: true, default: '' })
+  recipientPhone?: string;
+
   @Prop({ default: false })
   deleted!: boolean;
 }

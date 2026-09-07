@@ -55,6 +55,7 @@ export class AuthService {
       username: registerDto.username,
       email: registerDto.email,
       password: registerDto.password,
+      birthDate: registerDto.birthDate,
     });
 
     const userObj = createdUser.toObject();

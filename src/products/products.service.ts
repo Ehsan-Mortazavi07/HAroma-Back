@@ -132,6 +132,12 @@ export class ProductsService {
       filter.inStock = true;
     }
 
+    if (query.isPublished !== undefined) {
+      filter.isPublished = query.isPublished === 'true';
+    } else if (query.includeUnpublished !== 'true') {
+      filter.isPublished = { $ne: false };
+    }
+
     if (query.minPrice || query.maxPrice) {
       filter.price = {};
       if (query.minPrice) filter.price.$gte = Number(query.minPrice);
@@ -195,7 +201,7 @@ export class ProductsService {
 
   async findBySlug(slug: string): Promise<ProductDocument> {
     const product = await this.productModel
-      .findOne({ slug: slug.toLowerCase(), deleted: false })
+      .findOne({ slug: slug.toLowerCase(), deleted: false, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
       .exec();
 
@@ -207,7 +213,7 @@ export class ProductsService {
 
   async getFeaturedProducts(limit = 8) {
     return this.productModel
-      .find({ deleted: false, isFeatured: true, inStock: true })
+      .find({ deleted: false, isFeatured: true, inStock: true, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -216,7 +222,7 @@ export class ProductsService {
 
   async getBestSellers(limit = 8) {
     return this.productModel
-      .find({ deleted: false, inStock: true })
+      .find({ deleted: false, inStock: true, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
       .sort({ salesCount: -1, rating: -1 })
       .limit(limit)
@@ -225,7 +231,7 @@ export class ProductsService {
 
   async getVipExclusiveProducts(limit = 8) {
     return this.productModel
-      .find({ deleted: false, isVipOnly: true })
+      .find({ deleted: false, isVipOnly: true, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -239,6 +245,7 @@ export class ProductsService {
         _id: { $ne: product._id },
         categories: { $in: product.categories },
         deleted: false,
+        isPublished: { $ne: false },
       })
       .populate('categories', 'name nameEn slug')
       .limit(limit)

@@ -148,6 +148,10 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPublished?: boolean;
 }
 
 export class UpdateProductDto {
@@ -228,6 +232,10 @@ export class UpdateProductDto {
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPublished?: boolean;
 }
 
 export class ProductQueryDto {
@@ -251,6 +259,12 @@ export class ProductQueryDto {
 
   @IsOptional()
   isFeatured?: string;
+
+  @IsOptional()
+  isPublished?: string;
+
+  @IsOptional()
+  includeUnpublished?: string;
 
   @IsOptional()
   sort?: 'newest' | 'cheapest' | 'expensive' | 'popular' | 'bestseller';

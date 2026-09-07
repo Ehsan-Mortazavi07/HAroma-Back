@@ -113,7 +113,26 @@ export class OrdersService {
       notes: createOrderDto.notes || '',
     });
 
-    return order.save();
+    const savedOrder = await order.save();
+
+    // If user profile does not have address/city saved yet, auto-populate from this purchase
+    if ((!user.address || !user.city) && createOrderDto.deliveryAddress) {
+      try {
+        const da = createOrderDto.deliveryAddress;
+        await this.usersService.update(userId, {
+          province: user.province || da.province,
+          city: user.city || da.city,
+          address: user.address || da.addressDetail,
+          postalCode: user.postalCode || da.postalCode,
+          recipientName: user.recipientName || da.fullName,
+          recipientPhone: user.recipientPhone || da.phone,
+        });
+      } catch (err) {
+        // Non-blocking if profile update fails
+      }
+    }
+
+    return savedOrder;
   }
 
   async findUserOrders(userId: string) {

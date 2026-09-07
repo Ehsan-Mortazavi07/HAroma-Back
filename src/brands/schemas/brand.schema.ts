@@ -29,11 +29,15 @@ export class Brand {
   @Prop({ default: true })
   isFeatured!: boolean;
 
+  @Prop({ default: true })
+  isActive!: boolean;
+
   @Prop({ default: false })
   deleted!: boolean;
 }
 
 export const BrandSchema = SchemaFactory.createForClass(Brand);
 BrandSchema.index({ slug: 1 });
+BrandSchema.index({ isActive: 1 });
 BrandSchema.index({ deleted: 1 });
 BrandSchema.index({ order: 1 });

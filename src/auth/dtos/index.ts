@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, MinLength, IsOptional } from 'class-validator';
 
 export class LoginDto {
   @IsNotEmpty({ message: 'ایمیل یا نام کاربری الزامی است.' })
@@ -29,6 +29,10 @@ export class RegisterDto {
 
   @IsNotEmpty({ message: 'تکرار رمز عبور الزامی است.' })
   confirmPassword!: string;
+
+  @IsOptional()
+  @IsString()
+  birthDate?: string;
 }
 
 export class ForgotPasswordDto {

@@ -59,7 +59,7 @@ export class ProductsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async adminListProducts(@Query() query: ProductQueryDto) {
-    return this.productsService.findAll(query);
+    return this.productsService.findAll({ ...query, includeUnpublished: 'true' });
   }
 
   @Get('admin/products/:id')
@@ -88,7 +88,7 @@ export class ProductsController {
 
   @Delete('admin/products/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  @Roles(UserRole.ADMIN)
   async adminDeleteProduct(@Param('id') id: string) {
     return this.productsService.softDelete(id);
   }

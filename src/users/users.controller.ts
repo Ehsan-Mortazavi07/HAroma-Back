@@ -33,10 +33,10 @@ export class UsersController {
     return this.usersService.update(user._id || user.id, dto);
   }
 
-  // Admin endpoints
+  // Admin & Editor endpoints
   @Get('admin/users')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async listUsers(
     @Query('page') page?: number,
     @Query('pageSize') pageSize?: number,
@@ -48,7 +48,7 @@ export class UsersController {
 
   @Get('admin/users/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async getUser(@Param('id') id: string) {
     return this.usersService.findById(id);
   }
@@ -76,7 +76,7 @@ export class UsersController {
 
   @Patch('admin/users/:id/vip')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async toggleVip(
     @Param('id') id: string,
     @Body('isVip') isVip: boolean,

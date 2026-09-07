@@ -42,7 +42,7 @@ export class BrandsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async adminListBrands(@Query('q') q?: string) {
-    return this.brandsService.findAll({ q });
+    return this.brandsService.findAll({ q, includeInactive: true });
   }
 
   @Get('admin/brands/:id')
