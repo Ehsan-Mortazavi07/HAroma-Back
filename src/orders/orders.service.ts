@@ -124,6 +124,8 @@ export class OrdersService {
           city: user.city || da.city,
           address: user.address || da.addressDetail,
           postalCode: user.postalCode || da.postalCode,
+          buildingNumber: user.buildingNumber || da.buildingNumber,
+          unit: user.unit || da.unit,
           recipientName: user.recipientName || da.fullName,
           recipientPhone: user.recipientPhone || da.phone,
         });

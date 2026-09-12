@@ -60,6 +60,14 @@ export class DeliveryAddressDto {
   @IsString()
   postalCode?: string;
 
+  @IsOptional()
+  @IsString()
+  buildingNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
   @IsNotEmpty({ message: 'آدرس پستی کامل الزامی است.' })
   @IsString()
   addressDetail!: string;

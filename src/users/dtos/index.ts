@@ -32,6 +32,10 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
+  birthDateShamsi?: string;
+
+  @IsOptional()
+  @IsString()
   province?: string;
 
   @IsOptional()
@@ -106,6 +110,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   birthDate?: string;
+
+  @IsOptional()
+  @IsString()
+  birthDateShamsi?: string;
 
   @IsOptional()
   @IsString()

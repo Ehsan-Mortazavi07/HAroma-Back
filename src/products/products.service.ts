@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { CreateProductDto, UpdateProductDto, ProductQueryDto } from './dtos';
 import { Category, CategoryDocument } from '../categories/schemas/category.schema';
+import { Brand, BrandDocument } from '../brands/schemas/brand.schema';
 import { AttributesService } from '../attributes/attributes.service';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class ProductsService {
   constructor(
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
+    @InjectModel(Brand.name) private brandModel: Model<BrandDocument>,
     private attributesService: AttributesService,
   ) {}
 
@@ -76,10 +78,28 @@ export class ProductsService {
         ? createProductDto.inStock
         : (createProductDto.stockCount ?? 10) > 0;
 
+    // Process brands
+    let brandIds: Types.ObjectId[] = [];
+    if (createProductDto.brands && createProductDto.brands.length > 0) {
+      brandIds = createProductDto.brands
+        .filter((b) => Types.ObjectId.isValid(b))
+        .map((b) => new Types.ObjectId(b));
+    } else if (createProductDto.brand && Types.ObjectId.isValid(createProductDto.brand)) {
+      brandIds = [new Types.ObjectId(createProductDto.brand)];
+    }
+
+    const primaryBrand = brandIds.length > 0
+      ? brandIds[0]
+      : (createProductDto.brand && Types.ObjectId.isValid(createProductDto.brand)
+          ? new Types.ObjectId(createProductDto.brand)
+          : null);
+
     const product = new this.productModel({
       ...createProductDto,
       slug,
       categories: categoryIds,
+      brands: brandIds,
+      brand: primaryBrand,
       attributes,
       variants,
       inStock,
@@ -117,6 +137,27 @@ export class ProductsService {
         if (cat) {
           filter.categories = cat._id;
         }
+      }
+    }
+
+    if (query.brand) {
+      let brandId: Types.ObjectId | null = null;
+      if (Types.ObjectId.isValid(query.brand)) {
+        brandId = new Types.ObjectId(query.brand);
+      } else {
+        const b = await this.brandModel.findOne({
+          slug: query.brand.toLowerCase(),
+          deleted: false,
+        });
+        if (b) {
+          brandId = b._id as Types.ObjectId;
+        }
+      }
+      if (brandId) {
+        filter.$and = filter.$and || [];
+        filter.$and.push({
+          $or: [{ brands: brandId }, { brand: brandId }],
+        });
       }
     }
 
@@ -168,6 +209,8 @@ export class ProductsService {
       this.productModel
         .find(filter)
         .populate('categories', 'name nameEn slug')
+        .populate('brand', 'name nameEn slug logo')
+        .populate('brands', 'name nameEn slug logo')
         .sort(sortOption)
         .skip(skip)
         .limit(pageSize)
@@ -191,6 +234,8 @@ export class ProductsService {
     const product = await this.productModel
       .findOne({ _id: id, deleted: false })
       .populate('categories', 'name nameEn slug')
+      .populate('brand', 'name nameEn slug logo')
+      .populate('brands', 'name nameEn slug logo')
       .exec();
 
     if (!product) {
@@ -203,6 +248,8 @@ export class ProductsService {
     const product = await this.productModel
       .findOne({ slug: slug.toLowerCase(), deleted: false, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
+      .populate('brand', 'name nameEn slug logo')
+      .populate('brands', 'name nameEn slug logo')
       .exec();
 
     if (!product) {
@@ -215,6 +262,8 @@ export class ProductsService {
     return this.productModel
       .find({ deleted: false, isFeatured: true, inStock: true, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
+      .populate('brand', 'name nameEn slug logo')
+      .populate('brands', 'name nameEn slug logo')
       .sort({ createdAt: -1 })
       .limit(limit)
       .exec();
@@ -224,6 +273,8 @@ export class ProductsService {
     return this.productModel
       .find({ deleted: false, inStock: true, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
+      .populate('brand', 'name nameEn slug logo')
+      .populate('brands', 'name nameEn slug logo')
       .sort({ salesCount: -1, rating: -1 })
       .limit(limit)
       .exec();
@@ -233,6 +284,8 @@ export class ProductsService {
     return this.productModel
       .find({ deleted: false, isVipOnly: true, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
+      .populate('brand', 'name nameEn slug logo')
+      .populate('brands', 'name nameEn slug logo')
       .sort({ createdAt: -1 })
       .limit(limit)
       .exec();
@@ -248,6 +301,8 @@ export class ProductsService {
         isPublished: { $ne: false },
       })
       .populate('categories', 'name nameEn slug')
+      .populate('brand', 'name nameEn slug logo')
+      .populate('brands', 'name nameEn slug logo')
       .limit(limit)
       .exec();
   }
@@ -318,13 +373,65 @@ export class ProductsService {
       delete (updateProductDto as any).variants;
     }
 
+    if (updateProductDto.brands !== undefined) {
+      const brandIds = updateProductDto.brands
+        .filter((b) => Types.ObjectId.isValid(b))
+        .map((b) => new Types.ObjectId(b));
+      (product as any).brands = brandIds;
+      (product as any).brand = brandIds.length > 0 ? brandIds[0] : null;
+      delete (updateProductDto as any).brands;
+      delete (updateProductDto as any).brand;
+    } else if (updateProductDto.brand !== undefined) {
+      if (updateProductDto.brand && Types.ObjectId.isValid(updateProductDto.brand)) {
+        const bId = new Types.ObjectId(updateProductDto.brand);
+        (product as any).brand = bId;
+        if (!(product as any).brands || (product as any).brands.length === 0) {
+          (product as any).brands = [bId];
+        }
+      } else {
+        (product as any).brand = null;
+      }
+      delete (updateProductDto as any).brand;
+    }
+
     if (updateProductDto.stockCount !== undefined) {
       product.stockCount = updateProductDto.stockCount;
       product.inStock = updateProductDto.stockCount > 0;
     }
 
-    Object.assign(product, updateProductDto);
-    return product.save();
+    product.set(updateProductDto);
+    const updated = await this.productModel
+      .findByIdAndUpdate(id, { $set: product.toObject() }, { new: true })
+      .populate('categories', 'name nameEn slug')
+      .populate('brand', 'name nameEn slug logo')
+      .populate('brands', 'name nameEn slug logo')
+      .exec();
+    return updated || product;
+  }
+
+  async bulkUpdateStatus(
+    ids: string[],
+    isPublished: boolean,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.productModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { isPublished } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.productModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {

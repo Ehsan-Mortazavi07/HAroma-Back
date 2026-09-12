@@ -10,7 +10,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { CreateProductDto, UpdateProductDto, ProductQueryDto } from './dtos';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  ProductQueryDto,
+  BulkUpdateProductStatusDto,
+  BulkDeleteProductsDto,
+} from './dtos';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -84,6 +90,20 @@ export class ProductsController {
     @Body() dto: UpdateProductDto,
   ) {
     return this.productsService.update(id, dto);
+  }
+
+  @Patch('admin/products/bulk/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminBulkUpdateStatus(@Body() dto: BulkUpdateProductStatusDto) {
+    return this.productsService.bulkUpdateStatus(dto.ids, dto.isPublished);
+  }
+
+  @Post('admin/products/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDeleteProducts(@Body() dto: BulkDeleteProductsDto) {
+    return this.productsService.bulkSoftDelete(dto.ids);
   }
 
   @Delete('admin/products/:id')

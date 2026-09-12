@@ -46,6 +46,12 @@ export class DeliveryAddress {
   @Prop({ default: '', trim: true })
   postalCode?: string;
 
+  @Prop({ default: '', trim: true })
+  buildingNumber?: string;
+
+  @Prop({ default: '', trim: true })
+  unit?: string;
+
   @Prop({ required: true, trim: true })
   addressDetail!: string;
 }

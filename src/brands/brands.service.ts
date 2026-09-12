@@ -79,8 +79,13 @@ export class BrandsService {
       updateBrandDto.slug = updateBrandDto.slug.toLowerCase();
     }
 
-    Object.assign(brand, updateBrandDto);
-    return brand.save();
+    const updated = await this.brandModel
+      .findByIdAndUpdate(id, { $set: updateBrandDto }, { new: true })
+      .exec();
+    if (!updated) {
+      throw new NotFoundException('برند مورد نظر یافت نشد.');
+    }
+    return updated;
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {

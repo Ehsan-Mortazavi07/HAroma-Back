@@ -96,6 +96,12 @@ export class Product {
   })
   categories!: Types.ObjectId[];
 
+  @Prop({
+    type: [{ type: Types.ObjectId, ref: Brand.name }],
+    default: [],
+  })
+  brands!: Types.ObjectId[];
+
   @Prop({ type: Types.ObjectId, ref: Brand.name, default: null, required: false })
   brand?: Types.ObjectId | null;
 
@@ -143,6 +149,7 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 ProductSchema.index({ slug: 1 });
 ProductSchema.index({ categories: 1 });
 ProductSchema.index({ brand: 1 });
+ProductSchema.index({ brands: 1 });
 ProductSchema.index({ isVipOnly: 1 });
 ProductSchema.index({ isFeatured: 1 });
 ProductSchema.index({ isPublished: 1 });

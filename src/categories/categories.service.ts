@@ -106,8 +106,14 @@ export class CategoriesService {
           : null;
     }
 
-    Object.assign(category, payload);
-    return category.save();
+    const updated = await this.categoryModel
+      .findByIdAndUpdate(id, { $set: payload }, { new: true })
+      .populate('parentId', 'name nameEn slug')
+      .exec();
+    if (!updated) {
+      throw new NotFoundException('دسته‌بندی مورد نظر یافت نشد.');
+    }
+    return updated;
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {

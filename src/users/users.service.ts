@@ -137,6 +137,36 @@ export class UsersService {
     if (updateUserDto.avatar !== undefined) {
       user.avatar = updateUserDto.avatar;
     }
+    if (updateUserDto.birthDate !== undefined) {
+      user.birthDate = updateUserDto.birthDate ? updateUserDto.birthDate.trim() : null;
+    }
+    if (updateUserDto.birthDateShamsi !== undefined) {
+      user.birthDateShamsi = updateUserDto.birthDateShamsi ? updateUserDto.birthDateShamsi.trim() : null;
+    }
+    if (updateUserDto.province !== undefined) {
+      user.province = updateUserDto.province ? updateUserDto.province.trim() : undefined;
+    }
+    if (updateUserDto.city !== undefined) {
+      user.city = updateUserDto.city ? updateUserDto.city.trim() : undefined;
+    }
+    if (updateUserDto.address !== undefined) {
+      user.address = updateUserDto.address ? updateUserDto.address.trim() : undefined;
+    }
+    if (updateUserDto.postalCode !== undefined) {
+      user.postalCode = updateUserDto.postalCode ? updateUserDto.postalCode.trim() : undefined;
+    }
+    if (updateUserDto.buildingNumber !== undefined) {
+      user.buildingNumber = updateUserDto.buildingNumber ? updateUserDto.buildingNumber.trim() : undefined;
+    }
+    if (updateUserDto.unit !== undefined) {
+      user.unit = updateUserDto.unit ? updateUserDto.unit.trim() : undefined;
+    }
+    if (updateUserDto.recipientName !== undefined) {
+      user.recipientName = updateUserDto.recipientName ? updateUserDto.recipientName.trim() : undefined;
+    }
+    if (updateUserDto.recipientPhone !== undefined) {
+      user.recipientPhone = updateUserDto.recipientPhone ? updateUserDto.recipientPhone.trim() : undefined;
+    }
 
     // 4. Password change with current password validation
     if (updateUserDto.password) {

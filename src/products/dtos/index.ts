@@ -123,6 +123,11 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
+  brands?: string[];
+
+  @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ProductAttributeInputDto)
   attributes?: ProductAttributeInputDto[];
@@ -207,6 +212,11 @@ export class UpdateProductDto {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
+  brands?: string[];
+
+  @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ProductAttributeInputDto)
   attributes?: ProductAttributeInputDto[];
@@ -277,4 +287,22 @@ export class ProductQueryDto {
 
   @IsOptional()
   inStockOnly?: string;
+}
+
+export class BulkUpdateProductStatusDto {
+  @IsNotEmpty({ message: 'شناسه محصولات الزامی است.' })
+  @IsArray({ message: 'شناسه‌ها باید به صورت آرایه ارسال شوند.' })
+  @IsString({ each: true })
+  ids!: string[];
+
+  @IsNotEmpty({ message: 'وضعیت انتشار الزامی است.' })
+  @IsBoolean()
+  isPublished!: boolean;
+}
+
+export class BulkDeleteProductsDto {
+  @IsNotEmpty({ message: 'شناسه محصولات الزامی است.' })
+  @IsArray({ message: 'شناسه‌ها باید به صورت آرایه ارسال شوند.' })
+  @IsString({ each: true })
+  ids!: string[];
 }

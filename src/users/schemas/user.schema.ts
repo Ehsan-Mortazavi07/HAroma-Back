@@ -36,6 +36,9 @@ export class User {
   @Prop({ type: String, default: null })
   birthDate?: string | null;
 
+  @Prop({ type: String, default: null })
+  birthDateShamsi?: string | null;
+
   @Prop({ trim: true, default: '' })
   province?: string;
 

@@ -24,7 +24,13 @@ import { VipPlansService } from '../vip-plans/vip-plans.service';
 import { PageSectionsService } from '../page-sections/page-sections.service';
 import { UploadsService } from '../uploads/uploads.service';
 
-import { CreateProductDto, UpdateProductDto, ProductQueryDto } from '../products/dtos';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  ProductQueryDto,
+  BulkUpdateProductStatusDto,
+  BulkDeleteProductsDto,
+} from '../products/dtos';
 import { CreateCategoryDto, UpdateCategoryDto } from '../categories/dtos';
 import { CreateAttributeDto, UpdateAttributeDto, QuickCreateAttributeDto } from '../attributes/dtos';
 import { CreateCouponDto } from '../coupons/dtos';
@@ -80,7 +86,19 @@ export class AdminController {
     return this.productsService.update(id, dto);
   }
 
+  @Patch('products/bulk/status')
+  async bulkUpdateProductStatus(@Body() dto: BulkUpdateProductStatusDto) {
+    return this.productsService.bulkUpdateStatus(dto.ids, dto.isPublished);
+  }
+
+  @Post('products/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteProducts(@Body() dto: BulkDeleteProductsDto) {
+    return this.productsService.bulkSoftDelete(dto.ids);
+  }
+
   @Delete('products/:id')
+  @UseGuards(SuperAdminOnlyGuard)
   async deleteProduct(@Param('id') id: string) {
     return this.productsService.softDelete(id);
   }
@@ -179,7 +197,7 @@ export class AdminController {
   }
 
   // ----------------------------------------------------
-  // Coupons Management (Admin only)
+  // Coupons Management
   // ----------------------------------------------------
   @Get('coupons')
   async getCoupons() {
@@ -187,25 +205,22 @@ export class AdminController {
   }
 
   @Post('coupons')
-  @UseGuards(SuperAdminOnlyGuard)
   async createCoupon(@Body() dto: CreateCouponDto) {
     return this.couponsService.create(dto);
   }
 
   @Patch('coupons/:id')
-  @UseGuards(SuperAdminOnlyGuard)
   async updateCoupon(@Param('id') id: string, @Body() dto: Partial<CreateCouponDto>) {
     return this.couponsService.update(id, dto);
   }
 
   @Delete('coupons/:id')
-  @UseGuards(SuperAdminOnlyGuard)
   async deleteCoupon(@Param('id') id: string) {
     return this.couponsService.softDelete(id);
   }
 
   // ----------------------------------------------------
-  // VIP Plans Management (Admin only)
+  // VIP Plans Management
   // ----------------------------------------------------
   @Get('vip-plans')
   async getVipPlans() {
@@ -213,28 +228,24 @@ export class AdminController {
   }
 
   @Post('vip-plans')
-  @UseGuards(SuperAdminOnlyGuard)
   async createVipPlan(@Body() dto: CreateVipPlanDto) {
     return this.vipPlansService.create(dto);
   }
 
   @Patch('vip-plans/:id')
-  @UseGuards(SuperAdminOnlyGuard)
   async updateVipPlan(@Param('id') id: string, @Body() dto: UpdateVipPlanDto) {
     return this.vipPlansService.update(id, dto);
   }
 
   @Delete('vip-plans/:id')
-  @UseGuards(SuperAdminOnlyGuard)
   async deleteVipPlan(@Param('id') id: string) {
     return this.vipPlansService.softDelete(id);
   }
 
   // ----------------------------------------------------
-  // Users Management (Admin only)
+  // Users Management (View: Admin & Editor, Delete/Role: Admin only)
   // ----------------------------------------------------
   @Get('users')
-  @UseGuards(SuperAdminOnlyGuard)
   async getUsers(
     @Query('page') page?: number,
     @Query('pageSize') pageSize?: number,
@@ -250,7 +261,6 @@ export class AdminController {
   }
 
   @Get('users/:id')
-  @UseGuards(SuperAdminOnlyGuard)
   async getUser(@Param('id') id: string) {
     return this.usersService.findById(id);
   }
