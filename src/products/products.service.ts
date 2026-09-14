@@ -169,7 +169,7 @@ export class ProductsService {
       filter.isFeatured = query.isFeatured === 'true';
     }
 
-    if (query.inStockOnly === 'true') {
+    if (query.inStockOnly === 'true' || (query as any).inStock === 'true' || (query as any).inStock === true) {
       filter.inStock = true;
     }
 
@@ -188,15 +188,18 @@ export class ProductsService {
     let sortOption: any = { createdAt: -1 };
     switch (query.sort) {
       case 'cheapest':
+      case 'price_asc':
         sortOption = { price: 1 };
         break;
       case 'expensive':
+      case 'price_desc':
         sortOption = { price: -1 };
         break;
       case 'popular':
         sortOption = { rating: -1, reviewCount: -1 };
         break;
       case 'bestseller':
+      case 'best_sellers':
         sortOption = { salesCount: -1 };
         break;
       case 'newest':

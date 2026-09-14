@@ -277,7 +277,7 @@ export class ProductQueryDto {
   includeUnpublished?: string;
 
   @IsOptional()
-  sort?: 'newest' | 'cheapest' | 'expensive' | 'popular' | 'bestseller';
+  sort?: 'newest' | 'cheapest' | 'expensive' | 'popular' | 'bestseller' | 'price_asc' | 'price_desc' | 'best_sellers';
 
   @IsOptional()
   minPrice?: number;
