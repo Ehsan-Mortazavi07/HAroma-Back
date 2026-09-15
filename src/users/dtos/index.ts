@@ -1,4 +1,16 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength, IsBoolean, IsNumber } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MinLength,
+  IsBoolean,
+  IsNumber,
+  IsPhoneNumber,
+  Matches,
+  ValidateIf,
+} from 'class-validator';
 import { UserRole } from '../../common/enums';
 
 export class CreateUserDto {
@@ -15,7 +27,10 @@ export class CreateUserDto {
   email!: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
+  @IsPhoneNumber('IR', { message: 'شماره تلفن باید یک شماره معتبر در ایران باشد.' })
+  @Matches(/^09\d{9}$/, { message: 'شماره موبایل باید ۱۱ رقم بوده و با ۰۹ شروع شود.' })
   phone?: string;
 
   @IsNotEmpty({ message: 'رمز عبور الزامی است.' })
@@ -47,7 +62,9 @@ export class CreateUserDto {
   address?: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
+  @Matches(/^\d{10}$/, { message: 'کد پستی باید دقیقاً ۱۰ رقم عددی باشد.' })
   postalCode?: string;
 
   @IsOptional()
@@ -63,7 +80,10 @@ export class CreateUserDto {
   recipientName?: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
+  @IsPhoneNumber('IR', { message: 'شماره تماس تحویل‌گیرنده باید یک شماره معتبر در ایران باشد.' })
+  @Matches(/^09\d{9}$/, { message: 'شماره تماس تحویل‌گیرنده باید ۱۱ رقم بوده و با ۰۹ شروع شود.' })
   recipientPhone?: string;
 }
 
@@ -81,7 +101,10 @@ export class UpdateUserDto {
   email?: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
+  @IsPhoneNumber('IR', { message: 'شماره تلفن باید یک شماره معتبر در ایران باشد.' })
+  @Matches(/^09\d{9}$/, { message: 'شماره موبایل باید ۱۱ رقم بوده و با ۰۹ شروع شود.' })
   phone?: string;
 
   @IsOptional()
@@ -128,7 +151,9 @@ export class UpdateUserDto {
   address?: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
+  @Matches(/^\d{10}$/, { message: 'کد پستی باید دقیقاً ۱۰ رقم عددی باشد.' })
   postalCode?: string;
 
   @IsOptional()
@@ -144,7 +169,10 @@ export class UpdateUserDto {
   recipientName?: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
+  @IsPhoneNumber('IR', { message: 'شماره تماس تحویل‌گیرنده باید یک شماره معتبر در ایران باشد.' })
+  @Matches(/^09\d{9}$/, { message: 'شماره تماس تحویل‌گیرنده باید ۱۱ رقم بوده و با ۰۹ شروع شود.' })
   recipientPhone?: string;
 }
 
