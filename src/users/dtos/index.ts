@@ -85,6 +85,15 @@ export class CreateUserDto {
   @IsPhoneNumber('IR', { message: 'شماره تماس تحویل‌گیرنده باید یک شماره معتبر در ایران باشد.' })
   @Matches(/^09\d{9}$/, { message: 'شماره تماس تحویل‌گیرنده باید ۱۱ رقم بوده و با ۰۹ شروع شود.' })
   recipientPhone?: string;
+
+  @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
+  @IsEmail({}, { message: 'فرمت ایمیل تحویل‌گیرنده نامعتبر است.' })
+  recipientEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  addressNotes?: string;
 }
 
 export class UpdateUserDto {
@@ -174,6 +183,15 @@ export class UpdateUserDto {
   @IsPhoneNumber('IR', { message: 'شماره تماس تحویل‌گیرنده باید یک شماره معتبر در ایران باشد.' })
   @Matches(/^09\d{9}$/, { message: 'شماره تماس تحویل‌گیرنده باید ۱۱ رقم بوده و با ۰۹ شروع شود.' })
   recipientPhone?: string;
+
+  @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
+  @IsEmail({}, { message: 'فرمت ایمیل تحویل‌گیرنده نامعتبر است.' })
+  recipientEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  addressNotes?: string;
 }
 
 export class UpdateUserRoleDto {

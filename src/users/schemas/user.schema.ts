@@ -63,6 +63,12 @@ export class User {
   @Prop({ trim: true, default: '' })
   recipientPhone?: string;
 
+  @Prop({ trim: true, default: '' })
+  recipientEmail?: string;
+
+  @Prop({ trim: true, default: '' })
+  addressNotes?: string;
+
   @Prop({ default: false })
   deleted!: boolean;
 }

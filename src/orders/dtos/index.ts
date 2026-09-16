@@ -7,6 +7,9 @@ import {
   IsArray,
   ValidateNested,
   Min,
+  IsEmail,
+  ValidateIf,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderStatus, PaymentMethod } from '../../common/enums';
@@ -48,6 +51,11 @@ export class DeliveryAddressDto {
   @IsString()
   phone!: string;
 
+  @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
+  @IsEmail({}, { message: 'فرمت ایمیل نامعتبر است.' })
+  email?: string;
+
   @IsNotEmpty({ message: 'استان الزامی است.' })
   @IsString()
   province!: string;
@@ -57,7 +65,9 @@ export class DeliveryAddressDto {
   city!: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
+  @Matches(/^\d{10}$/, { message: 'کد پستی باید دقیقاً ۱۰ رقم باشد.' })
   postalCode?: string;
 
   @IsOptional()
@@ -71,6 +81,10 @@ export class DeliveryAddressDto {
   @IsNotEmpty({ message: 'آدرس پستی کامل الزامی است.' })
   @IsString()
   addressDetail!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
 }
 
 export class CreateOrderDto {

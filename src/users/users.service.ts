@@ -167,6 +167,12 @@ export class UsersService {
     if (updateUserDto.recipientPhone !== undefined) {
       user.recipientPhone = updateUserDto.recipientPhone ? updateUserDto.recipientPhone.trim() : undefined;
     }
+    if (updateUserDto.recipientEmail !== undefined) {
+      user.recipientEmail = updateUserDto.recipientEmail ? updateUserDto.recipientEmail.trim().toLowerCase() : undefined;
+    }
+    if (updateUserDto.addressNotes !== undefined) {
+      user.addressNotes = updateUserDto.addressNotes ? updateUserDto.addressNotes.trim() : undefined;
+    }
 
     // 4. Password change with current password validation
     if (updateUserDto.password) {

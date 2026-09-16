@@ -128,6 +128,8 @@ export class OrdersService {
           unit: user.unit || da.unit,
           recipientName: user.recipientName || da.fullName,
           recipientPhone: user.recipientPhone || da.phone,
+          recipientEmail: user.recipientEmail || da.email,
+          addressNotes: user.addressNotes || da.description,
         });
       } catch (err) {
         // Non-blocking if profile update fails

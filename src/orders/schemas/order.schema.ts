@@ -37,6 +37,9 @@ export class DeliveryAddress {
   @Prop({ required: true, trim: true })
   phone!: string;
 
+  @Prop({ trim: true, default: '' })
+  email?: string;
+
   @Prop({ required: true, trim: true })
   province!: string;
 
@@ -54,6 +57,9 @@ export class DeliveryAddress {
 
   @Prop({ required: true, trim: true })
   addressDetail!: string;
+
+  @Prop({ default: '', trim: true })
+  description?: string;
 }
 
 export const DeliveryAddressSchema = SchemaFactory.createForClass(DeliveryAddress);
