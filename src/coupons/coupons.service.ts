@@ -99,12 +99,20 @@ export class CouponsService {
   }
 
   async update(id: string, updateCouponDto: Partial<CreateCouponDto>): Promise<CouponDocument> {
-    const coupon = await this.findById(id);
     if (updateCouponDto.code) {
       updateCouponDto.code = updateCouponDto.code.toUpperCase().trim();
     }
-    Object.assign(coupon, updateCouponDto);
-    return coupon.save();
+    const coupon = await this.couponModel
+      .findOneAndUpdate(
+        { _id: id, deleted: false },
+        { $set: updateCouponDto },
+        { new: true, runValidators: false },
+      )
+      .exec();
+    if (!coupon) {
+      throw new NotFoundException('کد تخفیف مورد نظر یافت نشد.');
+    }
+    return coupon;
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {

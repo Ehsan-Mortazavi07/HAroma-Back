@@ -39,9 +39,17 @@ export class VariantTemplatesService {
   }
 
   async update(id: string, dto: UpdateVariantTemplateDto) {
-    const template = await this.findOne(id);
-    Object.assign(template, dto);
-    return template.save();
+    const template = await this.variantTemplateModel
+      .findOneAndUpdate(
+        { _id: id, deleted: false },
+        { $set: dto },
+        { new: true, runValidators: false },
+      )
+      .exec();
+    if (!template) {
+      throw new NotFoundException('الگوی تنوع مورد نظر یافت نشد.');
+    }
+    return template;
   }
 
   async remove(id: string) {

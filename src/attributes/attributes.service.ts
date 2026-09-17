@@ -91,8 +91,15 @@ export class AttributesService {
       updateDto.key = key;
     }
 
-    Object.assign(attribute, updateDto);
-    return attribute.save();
+    const updated = await this.attributeModel
+      .findOneAndUpdate(
+        { _id: id, deleted: false },
+        { $set: updateDto },
+        { new: true, runValidators: false },
+      )
+      .exec();
+    if (!updated) throw new NotFoundException('ویژگی مورد نظر یافت نشد.');
+    return updated;
   }
 
   async addPossibleValue(id: string, value: string): Promise<AttributeDocument> {

@@ -82,16 +82,7 @@ export class ProductsController {
     return this.productsService.create(dto);
   }
 
-  @Patch('admin/products/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
-  async adminUpdateProduct(
-    @Param('id') id: string,
-    @Body() dto: UpdateProductDto,
-  ) {
-    return this.productsService.update(id, dto);
-  }
-
+  // Bulk operations MUST come before :id routes to avoid NestJS matching 'bulk' as an :id param
   @Patch('admin/products/bulk/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
@@ -104,6 +95,16 @@ export class ProductsController {
   @Roles(UserRole.ADMIN)
   async adminBulkDeleteProducts(@Body() dto: BulkDeleteProductsDto) {
     return this.productsService.bulkSoftDelete(dto.ids);
+  }
+
+  @Patch('admin/products/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminUpdateProduct(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductDto,
+  ) {
+    return this.productsService.update(id, dto);
   }
 
   @Delete('admin/products/:id')

@@ -32,9 +32,17 @@ export class VipPlansService {
   }
 
   async update(id: string, dto: UpdateVipPlanDto): Promise<VipPlanDocument> {
-    const plan = await this.findById(id);
-    Object.assign(plan, dto);
-    return plan.save();
+    const plan = await this.vipPlanModel
+      .findOneAndUpdate(
+        { _id: id, deleted: false },
+        { $set: dto },
+        { new: true, runValidators: false },
+      )
+      .exec();
+    if (!plan) {
+      throw new NotFoundException('پلن اشتراک VIP مورد نظر یافت نشد.');
+    }
+    return plan;
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
