@@ -30,7 +30,8 @@ export class UsersController {
   @Patch('users/profile')
   @UseGuards(JwtAuthGuard)
   async updateProfile(@CurrentUser() user: any, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(user._id || user.id, dto);
+    const { role, isVip, vipExpiresAt, ...safeDto } = dto;
+    return this.usersService.update(user._id || user.id, safeDto, false);
   }
 
   // Admin & Editor endpoints
@@ -64,7 +65,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+    return this.usersService.update(id, dto, true);
   }
 
   @Patch('admin/users/:id/role')
@@ -76,7 +77,7 @@ export class UsersController {
 
   @Patch('admin/users/:id/vip')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  @Roles(UserRole.ADMIN)
   async toggleVip(
     @Param('id') id: string,
     @Body('isVip') isVip: boolean,

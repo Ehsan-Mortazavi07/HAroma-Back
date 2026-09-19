@@ -274,7 +274,7 @@ export class AdminController {
   @Patch('users/:id')
   @UseGuards(SuperAdminOnlyGuard)
   async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+    return this.usersService.update(id, dto, true);
   }
 
   @Patch('users/:id/role')

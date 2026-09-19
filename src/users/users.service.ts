@@ -101,16 +101,16 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto): Promise<UserDocument> {
+  async update(id: string, updateUserDto: UpdateUserDto, isAdmin: boolean = false): Promise<UserDocument> {
     const user = await this.userModel.findOne({ _id: id, deleted: false });
     if (!user) {
       throw new NotFoundException('کاربر مورد نظر یافت نشد.');
     }
 
     // 1. Username uniqueness check
-    if (updateUserDto.username) {
-      const cleanUsername = updateUserDto.username.trim().toLowerCase();
-      if (cleanUsername !== user.username) {
+    if (updateUserDto.username !== undefined) {
+      const cleanUsername = (updateUserDto.username || '').trim().toLowerCase();
+      if (cleanUsername && cleanUsername !== user.username) {
         const existingUser = await this.userModel.findOne({
           _id: { $ne: id },
           username: cleanUsername,
@@ -124,9 +124,9 @@ export class UsersService implements OnModuleInit {
     }
 
     // 2. Email uniqueness check
-    if (updateUserDto.email) {
-      const cleanEmail = updateUserDto.email.trim().toLowerCase();
-      if (cleanEmail !== user.email) {
+    if (updateUserDto.email !== undefined) {
+      const cleanEmail = (updateUserDto.email || '').trim().toLowerCase();
+      if (cleanEmail && cleanEmail !== user.email) {
         const existingEmail = await this.userModel.findOne({
           _id: { $ne: id },
           email: cleanEmail,
@@ -141,13 +141,13 @@ export class UsersService implements OnModuleInit {
 
     // 3. Full Name & Phone
     if (updateUserDto.fullName !== undefined) {
-      user.fullName = updateUserDto.fullName.trim();
+      user.fullName = (updateUserDto.fullName || '').trim();
     }
     if (updateUserDto.phone !== undefined) {
-      user.phone = updateUserDto.phone.trim();
+      user.phone = (updateUserDto.phone || '').trim();
     }
     if (updateUserDto.avatar !== undefined) {
-      user.avatar = updateUserDto.avatar;
+      user.avatar = updateUserDto.avatar || '';
     }
     if (updateUserDto.birthDate !== undefined) {
       user.birthDate = updateUserDto.birthDate ? updateUserDto.birthDate.trim() : null;
@@ -156,57 +156,64 @@ export class UsersService implements OnModuleInit {
       user.birthDateShamsi = updateUserDto.birthDateShamsi ? updateUserDto.birthDateShamsi.trim() : null;
     }
     if (updateUserDto.province !== undefined) {
-      user.province = updateUserDto.province ? updateUserDto.province.trim() : undefined;
+      user.province = (updateUserDto.province || '').trim();
     }
     if (updateUserDto.city !== undefined) {
-      user.city = updateUserDto.city ? updateUserDto.city.trim() : undefined;
+      user.city = (updateUserDto.city || '').trim();
     }
     if (updateUserDto.address !== undefined) {
-      user.address = updateUserDto.address ? updateUserDto.address.trim() : undefined;
+      user.address = (updateUserDto.address || '').trim();
     }
     if (updateUserDto.postalCode !== undefined) {
-      user.postalCode = updateUserDto.postalCode ? updateUserDto.postalCode.trim() : undefined;
+      user.postalCode = (updateUserDto.postalCode || '').trim();
     }
     if (updateUserDto.buildingNumber !== undefined) {
-      user.buildingNumber = updateUserDto.buildingNumber ? updateUserDto.buildingNumber.trim() : undefined;
+      user.buildingNumber = (updateUserDto.buildingNumber || '').trim();
     }
     if (updateUserDto.unit !== undefined) {
-      user.unit = updateUserDto.unit ? updateUserDto.unit.trim() : undefined;
+      user.unit = (updateUserDto.unit || '').trim();
     }
     if (updateUserDto.recipientName !== undefined) {
-      user.recipientName = updateUserDto.recipientName ? updateUserDto.recipientName.trim() : undefined;
+      user.recipientName = (updateUserDto.recipientName || '').trim();
     }
     if (updateUserDto.recipientPhone !== undefined) {
-      user.recipientPhone = updateUserDto.recipientPhone ? updateUserDto.recipientPhone.trim() : undefined;
+      user.recipientPhone = (updateUserDto.recipientPhone || '').trim();
     }
     if (updateUserDto.recipientEmail !== undefined) {
-      user.recipientEmail = updateUserDto.recipientEmail ? updateUserDto.recipientEmail.trim().toLowerCase() : undefined;
+      user.recipientEmail = (updateUserDto.recipientEmail || '').trim().toLowerCase();
     }
     if (updateUserDto.addressNotes !== undefined) {
-      user.addressNotes = updateUserDto.addressNotes ? updateUserDto.addressNotes.trim() : undefined;
+      user.addressNotes = (updateUserDto.addressNotes || '').trim();
     }
 
-    // 4. Password change with current password validation
+    // 4. Password change: Admin can update without currentPassword, regular users must provide it
     if (updateUserDto.password) {
-      if (!updateUserDto.currentPassword) {
-        throw new BadRequestException('برای تغییر رمز عبور، وارد کردن کلمه عبور فعلی الزامی است.');
-      }
-      const isMatch = await bcrypt.compare(updateUserDto.currentPassword, user.password);
-      if (!isMatch) {
-        throw new BadRequestException('کلمه عبور فعلی وارد شده نادرست است.');
+      if (!isAdmin) {
+        if (!updateUserDto.currentPassword) {
+          throw new BadRequestException('برای تغییر رمز عبور، وارد کردن کلمه عبور فعلی الزامی است.');
+        }
+        const isMatch = await bcrypt.compare(updateUserDto.currentPassword, user.password);
+        if (!isMatch) {
+          throw new BadRequestException('کلمه عبور فعلی وارد شده نادرست است.');
+        }
       }
       user.password = await bcrypt.hash(updateUserDto.password, 10);
     }
 
-    // 5. Admin role or VIP flags (if applicable)
-    if (updateUserDto.role !== undefined) {
-      user.role = updateUserDto.role;
-    }
-    if (updateUserDto.isVip !== undefined) {
-      user.isVip = updateUserDto.isVip;
-    }
-    if (updateUserDto.vipExpiresAt !== undefined) {
-      user.vipExpiresAt = updateUserDto.vipExpiresAt;
+    // 5. Admin-only role and VIP flags
+    if (isAdmin) {
+      if (updateUserDto.role !== undefined) {
+        user.role = updateUserDto.role;
+      }
+      if (updateUserDto.isVip !== undefined) {
+        user.isVip = updateUserDto.isVip;
+        if (!user.isVip) {
+          user.vipExpiresAt = null;
+        }
+      }
+      if (updateUserDto.vipExpiresAt !== undefined) {
+        user.vipExpiresAt = updateUserDto.vipExpiresAt;
+      }
     }
 
     await user.save();
