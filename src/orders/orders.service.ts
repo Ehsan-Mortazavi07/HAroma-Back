@@ -175,6 +175,7 @@ export class OrdersService {
     pageSize?: number;
     status?: OrderStatus;
     q?: string;
+    userId?: string;
   }) {
     const page = Math.max(1, Number(query?.page) || 1);
     const pageSize = Math.max(1, Number(query?.pageSize) || 20);
@@ -183,6 +184,9 @@ export class OrdersService {
     const filter: any = { deleted: false };
     if (query?.status) {
       filter.status = query.status;
+    }
+    if (query?.userId && Types.ObjectId.isValid(query.userId)) {
+      filter.user = new Types.ObjectId(query.userId);
     }
     if (query?.q) {
       filter.$or = [

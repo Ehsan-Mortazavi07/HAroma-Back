@@ -55,8 +55,9 @@ export class OrdersController {
     @Query('pageSize') pageSize?: number,
     @Query('status') status?: OrderStatus,
     @Query('q') q?: string,
+    @Query('userId') userId?: string,
   ) {
-    return this.ordersService.findAll({ page, pageSize, status, q });
+    return this.ordersService.findAll({ page, pageSize, status, q, userId });
   }
 
   @Get('admin/orders/dashboard-stats')
