@@ -90,7 +90,7 @@ export class SeedService implements OnApplicationBootstrap {
         email: 'vip@hatefaroma.com',
         phone: '09120000003',
         password,
-        role: UserRole.VIP,
+        role: UserRole.USER,
         isVip: true,
         vipExpiresAt: expiresAt,
       });

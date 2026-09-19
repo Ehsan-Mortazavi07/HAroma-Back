@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
@@ -7,8 +7,20 @@ import { CreateUserDto, UpdateUserDto } from './dtos';
 import { UserRole } from '../common/enums';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+
+  async onModuleInit() {
+    // Automatically normalize any legacy records where role was stored as 'vip'
+    try {
+      await this.userModel.updateMany(
+        { role: 'vip' as any },
+        { $set: { role: UserRole.USER, isVip: true } },
+      );
+    } catch {
+      // Ignored if DB is still establishing connection
+    }
+  }
 
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
     const existing = await this.userModel.findOne({
@@ -204,9 +216,6 @@ export class UsersService {
   async setRole(id: string, role: UserRole): Promise<UserDocument> {
     const user = await this.findById(id);
     user.role = role;
-    if (role === UserRole.VIP) {
-      user.isVip = true;
-    }
     return user.save();
   }
 
@@ -217,14 +226,12 @@ export class UsersService {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + (durationDays || 30));
       user.vipExpiresAt = expiresAt;
-      if (user.role === UserRole.USER) {
-        user.role = UserRole.VIP;
-      }
     } else {
       user.vipExpiresAt = null;
-      if (user.role === UserRole.VIP) {
-        user.role = UserRole.USER;
-      }
+    }
+    // Normalize any legacy 'vip' role to standard 'user'
+    if ((user.role as string) === 'vip') {
+      user.role = UserRole.USER;
     }
     return user.save();
   }
