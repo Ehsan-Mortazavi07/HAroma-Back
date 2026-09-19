@@ -87,7 +87,7 @@ export class SeedService implements OnApplicationBootstrap {
       await this.userModel.create({
         fullName: 'کاربر طلایی هاتف آروما',
         username: 'vipuser',
-        email: 'vip@hatefaroma.com',
+        email: 'vip@gmail.com',
         phone: '09120000003',
         password,
         role: UserRole.USER,
