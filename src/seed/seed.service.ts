@@ -53,9 +53,9 @@ export class SeedService implements OnApplicationBootstrap {
     if (!adminExists) {
       const password = await bcrypt.hash('Admin@123456', 10);
       await this.userModel.create({
-        fullName: 'مدیر کل هاتف آروما',
+        fullName: 'مدیر کل ',
         username: 'admin',
-        email: 'admin@hatefaroma.com',
+        email: 'admin@gmial.com',
         phone: '09120000001',
         password,
         role: UserRole.ADMIN,
@@ -68,7 +68,7 @@ export class SeedService implements OnApplicationBootstrap {
     if (!editorExists) {
       const password = await bcrypt.hash('Editor@123456', 10);
       await this.userModel.create({
-        fullName: 'ویراستار محصولات',
+        fullName: 'ادیتور محصولات',
         username: 'editor',
         email: 'editor@hatefaroma.com',
         phone: '09120000002',
