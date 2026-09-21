@@ -222,7 +222,7 @@ export class OrdersService {
   ): Promise<OrderDocument> {
     const order = await this.findById(id);
     order.status = dto.status;
-    if (dto.trackingCode) {
+    if (dto.trackingCode !== undefined) {
       order.trackingCode = dto.trackingCode;
     }
     return order.save();
