@@ -12,8 +12,8 @@ export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   username!: string;
 
-  @Prop({ required: true, unique: true, lowercase: true, trim: true })
-  email!: string;
+  @Prop({ required: false, lowercase: true, trim: true, default: null })
+  email?: string;
 
   @Prop({ trim: true, default: '' })
   phone?: string;
@@ -74,7 +74,14 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-UserSchema.index({ email: 1 });
-UserSchema.index({ username: 1 });
+UserSchema.index(
+  { email: 1 },
+  {
+    unique: true,
+    sparse: true,
+    partialFilterExpression: { email: { $type: 'string', $gt: '' } },
+  },
+);
+UserSchema.index({ phone: 1 });
 UserSchema.index({ role: 1 });
 UserSchema.index({ deleted: 1 });

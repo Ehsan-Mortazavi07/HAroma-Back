@@ -11,7 +11,7 @@ export class UsersService implements OnModuleInit {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
   async onModuleInit() {
-    // Automatically normalize any legacy records where role was stored as 'vip'
+    // 1. Automatically normalize any legacy records where role was stored as 'vip'
     try {
       await this.userModel.updateMany(
         { role: 'vip' as any },
@@ -20,26 +20,57 @@ export class UsersService implements OnModuleInit {
     } catch {
       // Ignored if DB is still establishing connection
     }
+
+    // 2. Physical purge of any lingering soft-deleted users
+    try {
+      await this.userModel.deleteMany({ deleted: true });
+    } catch {}
+
+    // 3. Drop legacy email_1 index if it does not have partialFilterExpression
+    try {
+      const indexes = await this.userModel.collection.indexes();
+      const emailIndex = indexes.find((idx) => idx.name === 'email_1');
+      if (emailIndex && !emailIndex.partialFilterExpression) {
+        await this.userModel.collection.dropIndex('email_1');
+      }
+    } catch {}
   }
 
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
+    const cleanUsername = createUserDto.username.trim().toLowerCase();
+    const cleanEmail = createUserDto.email?.trim() ? createUserDto.email.trim().toLowerCase() : undefined;
+    const cleanPhone = createUserDto.phone?.trim() ? createUserDto.phone.trim() : undefined;
+
+    const orConditions: any[] = [{ username: cleanUsername }];
+    if (cleanEmail) {
+      orConditions.push({ email: cleanEmail });
+    }
+    if (cleanPhone) {
+      orConditions.push({ phone: cleanPhone });
+    }
+
     const existing = await this.userModel.findOne({
-      $or: [
-        { email: createUserDto.email.toLowerCase() },
-        { username: createUserDto.username.toLowerCase() },
-      ],
-      deleted: false,
+      $or: orConditions,
     });
 
     if (existing) {
-      throw new ConflictException('کاربری با این ایمیل یا نام کاربری از قبل وجود دارد.');
+      if (existing.username === cleanUsername) {
+        throw new ConflictException('این نام کاربری قبلاً توسط کاربر دیگری ثبت شده است.');
+      }
+      if (cleanEmail && existing.email === cleanEmail) {
+        throw new ConflictException('این آدرس ایمیل قبلاً توسط کاربر دیگری ثبت شده است.');
+      }
+      if (cleanPhone && existing.phone === cleanPhone) {
+        throw new ConflictException('این شماره تماس قبلاً توسط کاربر دیگری ثبت شده است.');
+      }
+      throw new ConflictException('کاربری با این مشخصات از قبل وجود دارد.');
     }
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
     const user = new this.userModel({
       ...createUserDto,
-      email: createUserDto.email.toLowerCase(),
-      username: createUserDto.username.toLowerCase(),
+      email: cleanEmail,
+      username: cleanUsername,
       password: hashedPassword,
     });
     return user.save();
@@ -95,7 +126,11 @@ export class UsersService implements OnModuleInit {
     const cleanId = identifier.trim().toLowerCase();
     return this.userModel
       .findOne({
-        $or: [{ email: cleanId }, { username: cleanId }],
+        $or: [
+          { username: cleanId },
+          { email: cleanId },
+          { phone: cleanId },
+        ],
         deleted: false,
       })
       .exec();
@@ -126,16 +161,20 @@ export class UsersService implements OnModuleInit {
     // 2. Email uniqueness check
     if (updateUserDto.email !== undefined) {
       const cleanEmail = (updateUserDto.email || '').trim().toLowerCase();
-      if (cleanEmail && cleanEmail !== user.email) {
-        const existingEmail = await this.userModel.findOne({
-          _id: { $ne: id },
-          email: cleanEmail,
-          deleted: false,
-        });
-        if (existingEmail) {
-          throw new ConflictException('این آدرس ایمیل قبلاً توسط کاربر دیگری ثبت شده است.');
+      if (cleanEmail) {
+        if (cleanEmail !== user.email) {
+          const existingEmail = await this.userModel.findOne({
+            _id: { $ne: id },
+            email: cleanEmail,
+            deleted: false,
+          });
+          if (existingEmail) {
+            throw new ConflictException('این آدرس ایمیل قبلاً توسط کاربر دیگری ثبت شده است.');
+          }
+          user.email = cleanEmail;
         }
-        user.email = cleanEmail;
+      } else {
+        user.email = undefined;
       }
     }
 
@@ -259,9 +298,9 @@ export class UsersService implements OnModuleInit {
       throw new BadRequestException('امکان حذف حساب کاربری جاری خودتان وجود ندارد.');
     }
 
-    user.deleted = true;
-    await user.save();
-    return { success: true, message: 'کاربر با موفقیت حذف شد.' };
+    // Physical hard delete directly from database
+    await this.userModel.deleteOne({ _id: user._id });
+    return { success: true, message: 'کاربر با موفقیت از پایگاه داده حذف شد.' };
   }
 
   async bulkUpdateVip(
@@ -297,11 +336,9 @@ export class UsersService implements OnModuleInit {
       return { success: true, modifiedCount: 0 };
     }
 
-    const result = await this.userModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    // Physical hard delete directly from database
+    const result = await this.userModel.deleteMany({ _id: { $in: validIds } });
+    return { success: true, modifiedCount: result.deletedCount };
   }
 
   async countTotal() {

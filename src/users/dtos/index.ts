@@ -22,9 +22,10 @@ export class CreateUserDto {
   @IsString()
   username!: string;
 
-  @IsNotEmpty({ message: 'ایمیل الزامی است.' })
+  @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsEmail({}, { message: 'فرمت ایمیل نامعتبر است.' })
-  email!: string;
+  email?: string;
 
   @IsOptional()
   @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
@@ -117,6 +118,7 @@ export class UpdateUserDto {
   username?: string;
 
   @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsEmail({}, { message: 'فرمت ایمیل نامعتبر است.' })
   email?: string;
 

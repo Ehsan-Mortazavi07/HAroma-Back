@@ -19,9 +19,9 @@ export class RegisterDto {
   @IsString()
   username!: string;
 
-  @IsNotEmpty({ message: 'ایمیل الزامی است.' })
+  @IsOptional()
   @IsString()
-  email!: string;
+  email?: string;
 
   @IsNotEmpty({ message: 'رمز عبور الزامی است.' })
   @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })

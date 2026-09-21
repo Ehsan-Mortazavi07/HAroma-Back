@@ -34,7 +34,7 @@ export class AuthService {
     const payload = {
       sub: user._id,
       username: user.username,
-      email: user.email,
+      email: user.email || '',
       role: user.role,
       isVip: user.isVip,
     };
@@ -50,10 +50,12 @@ export class AuthService {
       throw new BadRequestException('رمز عبور با تکرار آن مطابقت ندارد.');
     }
 
+    const cleanEmail = registerDto.email?.trim() ? registerDto.email.trim().toLowerCase() : undefined;
+
     const createdUser = await this.usersService.create({
       fullName: registerDto.fullName,
       username: registerDto.username,
-      email: registerDto.email,
+      email: cleanEmail,
       password: registerDto.password,
       birthDate: registerDto.birthDate,
     });
@@ -64,7 +66,7 @@ export class AuthService {
     const payload = {
       sub: userObj._id,
       username: userObj.username,
-      email: userObj.email,
+      email: userObj.email || '',
       role: userObj.role,
       isVip: userObj.isVip,
     };
@@ -82,6 +84,9 @@ export class AuthService {
     }
 
     const email = user.email;
+    if (!email) {
+      throw new BadRequestException('برای این حساب کاربری آدرس ایمیلی ثبت نشده است.');
+    }
     const maskedEmail = email.replace(/(.{2})(.*)(?=@)/, (gp1, gp2, gp3) => gp2 + '*'.repeat(Math.max(3, gp3.length)));
 
     return {
