@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { VariantTemplate, VariantTemplateDocument } from './schemas/variant-template.schema';
 import { CreateVariantTemplateDto, UpdateVariantTemplateDto } from './dtos';
 
@@ -56,5 +56,16 @@ export class VariantTemplatesService {
     const template = await this.findOne(id);
     template.deleted = true;
     return template.save();
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.variantTemplateModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }

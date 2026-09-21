@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto, UpdateUserDto } from './dtos';
@@ -248,6 +248,36 @@ export class UsersService implements OnModuleInit {
     user.deleted = true;
     await user.save();
     return { success: true, message: 'کاربر با موفقیت حذف شد.' };
+  }
+
+  async bulkUpdateVip(
+    ids: string[],
+    isVip: boolean,
+    durationDays?: number,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const expiresAt = isVip ? new Date() : null;
+    if (isVip && expiresAt) {
+      expiresAt.setDate(expiresAt.getDate() + (durationDays || 30));
+    }
+    const result = await this.userModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { isVip, vipExpiresAt: expiresAt } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.userModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 
   async countTotal() {

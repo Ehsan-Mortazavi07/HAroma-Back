@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Brand, BrandDocument } from './schemas/brand.schema';
 import { CreateBrandDto, UpdateBrandDto } from './dtos';
 
@@ -93,5 +93,30 @@ export class BrandsService {
     brand.deleted = true;
     await brand.save();
     return { success: true, message: 'برند با موفقیت حذف گردید.' };
+  }
+
+  async bulkUpdateStatus(
+    ids: string[],
+    isActive: boolean,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.brandModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { isActive } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.brandModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }

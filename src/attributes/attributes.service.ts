@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Attribute, AttributeDocument } from './schemas/attribute.schema';
 import { CreateAttributeDto, QuickCreateAttributeDto, UpdateAttributeDto } from './dtos';
 
@@ -117,5 +117,16 @@ export class AttributesService {
     attribute.deleted = true;
     await attribute.save();
     return { success: true, message: 'ویژگی با موفقیت حذف شد.' };
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.attributeModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }

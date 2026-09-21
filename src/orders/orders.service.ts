@@ -228,6 +228,31 @@ export class OrdersService {
     return order.save();
   }
 
+  async bulkUpdateStatus(
+    ids: string[],
+    status: OrderStatus,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.orderModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { status } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.orderModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
+
   async getDashboardStats() {
     const [totalOrders, totalSalesAgg, pendingOrders] = await Promise.all([
       this.orderModel.countDocuments({ deleted: false }),

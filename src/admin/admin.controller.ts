@@ -131,6 +131,17 @@ export class AdminController {
     return this.categoriesService.softDelete(id);
   }
 
+  @Patch('categories/bulk/status')
+  async bulkUpdateCategoriesStatus(@Body('ids') ids: string[], @Body('isActive') isActive: boolean) {
+    return this.categoriesService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('categories/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteCategories(@Body('ids') ids: string[]) {
+    return this.categoriesService.bulkSoftDelete(ids);
+  }
+
   // ----------------------------------------------------
   // Attributes & Quick Create
   // ----------------------------------------------------
@@ -162,6 +173,12 @@ export class AdminController {
   @Delete('attributes/:id')
   async deleteAttribute(@Param('id') id: string) {
     return this.attributesService.softDelete(id);
+  }
+
+  @Post('attributes/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteAttributes(@Body('ids') ids: string[]) {
+    return this.attributesService.bulkSoftDelete(ids);
   }
 
   // ----------------------------------------------------
@@ -196,6 +213,20 @@ export class AdminController {
     return this.ordersService.updateStatus(id, { status, trackingCode });
   }
 
+  @Patch('orders/bulk/status')
+  async bulkUpdateOrdersStatus(
+    @Body('ids') ids: string[],
+    @Body('status') status: OrderStatus,
+  ) {
+    return this.ordersService.bulkUpdateStatus(ids, status);
+  }
+
+  @Post('orders/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteOrders(@Body('ids') ids: string[]) {
+    return this.ordersService.bulkSoftDelete(ids);
+  }
+
   // ----------------------------------------------------
   // Coupons Management
   // ----------------------------------------------------
@@ -219,6 +250,20 @@ export class AdminController {
     return this.couponsService.softDelete(id);
   }
 
+  @Patch('coupons/bulk/status')
+  async bulkUpdateCouponsStatus(
+    @Body('ids') ids: string[],
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.couponsService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('coupons/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteCoupons(@Body('ids') ids: string[]) {
+    return this.couponsService.bulkSoftDelete(ids);
+  }
+
   // ----------------------------------------------------
   // VIP Plans Management
   // ----------------------------------------------------
@@ -240,6 +285,20 @@ export class AdminController {
   @Delete('vip-plans/:id')
   async deleteVipPlan(@Param('id') id: string) {
     return this.vipPlansService.softDelete(id);
+  }
+
+  @Patch('vip-plans/bulk/status')
+  async bulkUpdateVipPlansStatus(
+    @Body('ids') ids: string[],
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.vipPlansService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('vip-plans/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteVipPlans(@Body('ids') ids: string[]) {
+    return this.vipPlansService.bulkSoftDelete(ids);
   }
 
   // ----------------------------------------------------
@@ -293,6 +352,22 @@ export class AdminController {
   @UseGuards(SuperAdminOnlyGuard)
   async deleteUser(@Param('id') id: string) {
     return this.usersService.softDelete(id);
+  }
+
+  @Patch('users/bulk/vip')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkUpdateUsersVip(
+    @Body('ids') ids: string[],
+    @Body('isVip') isVip: boolean,
+    @Body('durationDays') durationDays?: number,
+  ) {
+    return this.usersService.bulkUpdateVip(ids, isVip, durationDays);
+  }
+
+  @Post('users/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteUsers(@Body('ids') ids: string[]) {
+    return this.usersService.bulkSoftDelete(ids);
   }
 
   // ----------------------------------------------------

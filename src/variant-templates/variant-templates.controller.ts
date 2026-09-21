@@ -61,4 +61,11 @@ export class VariantTemplatesController {
   async deleteTemplate(@Param('id') id: string) {
     return this.variantTemplatesService.remove(id);
   }
+
+  @Post('admin/variant-templates/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async bulkDeleteTemplates(@Body('ids') ids: string[]) {
+    return this.variantTemplatesService.bulkSoftDelete(ids);
+  }
 }

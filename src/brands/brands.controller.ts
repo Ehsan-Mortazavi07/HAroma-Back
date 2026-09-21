@@ -75,4 +75,21 @@ export class BrandsController {
   async adminDeleteBrand(@Param('id') id: string) {
     return this.brandsService.softDelete(id);
   }
+
+  @Patch('admin/brands/bulk/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminBulkUpdateStatus(
+    @Body('ids') ids: string[],
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.brandsService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('admin/brands/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDelete(@Body('ids') ids: string[]) {
+    return this.brandsService.bulkSoftDelete(ids);
+  }
 }

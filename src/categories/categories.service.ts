@@ -122,4 +122,29 @@ export class CategoriesService {
     await category.save();
     return { success: true, message: 'دسته‌بندی با موفقیت حذف شد.' };
   }
+
+  async bulkUpdateStatus(
+    ids: string[],
+    isActive: boolean,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.categoryModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { isActive } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.categoryModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
 }

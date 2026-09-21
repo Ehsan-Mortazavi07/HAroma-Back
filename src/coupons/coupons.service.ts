@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Coupon, CouponDocument } from './schemas/coupon.schema';
 import { CreateCouponDto, ValidateCouponDto } from './dtos';
 
@@ -120,5 +120,30 @@ export class CouponsService {
     coupon.deleted = true;
     await coupon.save();
     return { success: true, message: 'کد تخفیف با موفقیت حذف شد.' };
+  }
+
+  async bulkUpdateStatus(
+    ids: string[],
+    isActive: boolean,
+  ): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.couponModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { isActive } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
+  }
+
+  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+    const validIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const result = await this.couponModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }
