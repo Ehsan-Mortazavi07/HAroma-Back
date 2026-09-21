@@ -34,7 +34,7 @@ export class ProductsController {
 
   @Get('products/featured')
   async getFeaturedProducts(@Query('limit') limit?: number) {
-    return this.productsService.getFeaturedProducts(limit ? Number(limit) : 8);
+    return this.productsService.getFeaturedProducts(limit ? Number(limit) : 16);
   }
 
   @Get('products/best-sellers')

@@ -266,8 +266,8 @@ export class ProductsService implements OnModuleInit {
     return product;
   }
 
-  async getFeaturedProducts(limit = 8) {
-    return this.productModel
+  async getFeaturedProducts(limit = 16) {
+    const featured = await this.productModel
       .find({ deleted: false, isFeatured: true, inStock: true, isPublished: { $ne: false } })
       .populate('categories', 'name nameEn slug')
       .populate('brand', 'name nameEn slug logo')
@@ -275,6 +275,28 @@ export class ProductsService implements OnModuleInit {
       .sort({ createdAt: -1 })
       .limit(limit)
       .exec();
+
+    if (featured.length < limit) {
+      const existingIds = featured.map((p) => p._id);
+      const remaining = limit - featured.length;
+      const additional = await this.productModel
+        .find({
+          _id: { $nin: existingIds },
+          deleted: false,
+          inStock: true,
+          isPublished: { $ne: false },
+        })
+        .populate('categories', 'name nameEn slug')
+        .populate('brand', 'name nameEn slug logo')
+        .populate('brands', 'name nameEn slug logo')
+        .sort({ discountPrice: -1, salesCount: -1, createdAt: -1 })
+        .limit(remaining)
+        .exec();
+
+      return [...featured, ...additional];
+    }
+
+    return featured;
   }
 
   async getBestSellers(limit = 8) {
