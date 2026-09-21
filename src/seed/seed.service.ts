@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { Brand, BrandDocument } from '../brands/schemas/brand.schema';
 import { Category, CategoryDocument } from '../categories/schemas/category.schema';
 import { Attribute, AttributeDocument } from '../attributes/schemas/attribute.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
@@ -18,6 +19,7 @@ export class SeedService implements OnApplicationBootstrap {
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Brand.name) private brandModel: Model<BrandDocument>,
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
     @InjectModel(Attribute.name) private attributeModel: Model<AttributeDocument>,
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
@@ -32,9 +34,10 @@ export class SeedService implements OnApplicationBootstrap {
   }
 
   async seedAll() {
-    this.logger.log('Checking database seeding status...');
+    this.logger.log('Checking database seeding and integrity status...');
     try {
       await this.seedUsers();
+      await this.seedBrands();
       await this.seedCategories();
       await this.seedAttributes();
       await this.seedVariantTemplates();
@@ -42,77 +45,289 @@ export class SeedService implements OnApplicationBootstrap {
       await this.seedVipPlans();
       await this.seedCoupons();
       await this.seedPageSections();
-      this.logger.log('Database seeding verified successfully! 🌿');
+      this.logger.log('Database seeding & account restoration completed successfully! 🌿✨');
     } catch (err: any) {
-      this.logger.error(`Error during seeding: ${err.message}`);
+      this.logger.error(`Error during seeding: ${err.message}`, err.stack);
     }
   }
 
+  // ====================================================================
+  // 1. Users (Admin, Editor, VIP, Regular) - Resurrection & Guaranteed Upsert
+  // ====================================================================
   private async seedUsers() {
-    const adminExists = await this.userModel.findOne({ username: 'admin' });
-    if (!adminExists) {
-      const password = await bcrypt.hash('Admin@123456', 10);
+    // A. Super Admin
+    const admin = await this.userModel.findOne({
+      $or: [
+        { username: 'admin' },
+        { phone: '09120000001' },
+        { email: 'admin@hatefaroma.com' },
+        { email: 'admin@gmial.com' },
+      ],
+    });
+    const adminPassword = await bcrypt.hash('Admin@123456', 10);
+
+    if (admin) {
+      admin.fullName = 'مدیر کل هاتف آروما';
+      admin.username = 'admin';
+      admin.email = 'admin@hatefaroma.com';
+      admin.phone = '09120000001';
+      admin.password = adminPassword;
+      admin.role = UserRole.ADMIN;
+      admin.isVip = true;
+      admin.deleted = false;
+      await admin.save();
+      this.logger.log('✅ Admin user restored & verified: admin / Admin@123456 (phone: 09120000001)');
+    } else {
       await this.userModel.create({
-        fullName: 'مدیر کل ',
+        fullName: 'مدیر کل هاتف آروما',
         username: 'admin',
-        email: 'admin@gmial.com',
+        email: 'admin@hatefaroma.com',
         phone: '09120000001',
-        password,
+        password: adminPassword,
         role: UserRole.ADMIN,
         isVip: true,
+        deleted: false,
       });
-      this.logger.log('Admin user seeded: admin / Admin@123456');
+      this.logger.log('✅ Admin user created: admin / Admin@123456 (phone: 09120000001)');
     }
 
-    const editorExists = await this.userModel.findOne({ username: 'editor' });
-    if (!editorExists) {
-      const password = await bcrypt.hash('Editor@123456', 10);
+    // B. Editor
+    const editor = await this.userModel.findOne({
+      $or: [
+        { username: 'editor' },
+        { phone: '09120000002' },
+        { email: 'editor@hatefaroma.com' },
+      ],
+    });
+    const editorPassword = await bcrypt.hash('Editor@123456', 10);
+
+    if (editor) {
+      editor.fullName = 'ویراستار محصولات';
+      editor.username = 'editor';
+      editor.email = 'editor@hatefaroma.com';
+      editor.phone = '09120000002';
+      editor.password = editorPassword;
+      editor.role = UserRole.EDITOR;
+      editor.deleted = false;
+      await editor.save();
+      this.logger.log('✅ Editor user restored & verified: editor / Editor@123456');
+    } else {
       await this.userModel.create({
-        fullName: 'ادیتور محصولات',
+        fullName: 'ویراستار محصولات',
         username: 'editor',
         email: 'editor@hatefaroma.com',
         phone: '09120000002',
-        password,
+        password: editorPassword,
         role: UserRole.EDITOR,
         isVip: false,
+        deleted: false,
       });
-      this.logger.log('Editor user seeded: editor / Editor@123456');
+      this.logger.log('✅ Editor user created: editor / Editor@123456');
     }
 
-    const vipExists = await this.userModel.findOne({ username: 'vipuser' });
-    if (!vipExists) {
-      const password = await bcrypt.hash('Vip@123456', 10);
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 365);
+    // C. VIP User
+    const vip = await this.userModel.findOne({
+      $or: [
+        { username: 'vipuser' },
+        { phone: '09120000003' },
+        { email: 'vip@hatefaroma.com' },
+        { email: 'vip@gmail.com' },
+      ],
+    });
+    const vipPassword = await bcrypt.hash('Vip@123456', 10);
+    const vipExpires = new Date();
+    vipExpires.setDate(vipExpires.getDate() + 365);
+
+    if (vip) {
+      vip.fullName = 'کاربر طلایی هاتف آروما';
+      vip.username = 'vipuser';
+      vip.email = 'vip@hatefaroma.com';
+      vip.phone = '09120000003';
+      vip.password = vipPassword;
+      vip.role = UserRole.USER;
+      vip.isVip = true;
+      vip.vipExpiresAt = vipExpires;
+      vip.deleted = false;
+      await vip.save();
+      this.logger.log('✅ VIP user restored & verified: vipuser / Vip@123456');
+    } else {
       await this.userModel.create({
         fullName: 'کاربر طلایی هاتف آروما',
         username: 'vipuser',
-        email: 'vip@gmail.com',
+        email: 'vip@hatefaroma.com',
         phone: '09120000003',
-        password,
+        password: vipPassword,
         role: UserRole.USER,
         isVip: true,
-        vipExpiresAt: expiresAt,
+        vipExpiresAt: vipExpires,
+        deleted: false,
       });
-      this.logger.log('VIP user seeded: vipuser / Vip@123456');
+      this.logger.log('✅ VIP user created: vipuser / Vip@123456');
     }
 
-    const regularExists = await this.userModel.findOne({ username: 'normaluser' });
-    if (!regularExists) {
-      const password = await bcrypt.hash('User@123456', 10);
+    // D. Normal User
+    const regular = await this.userModel.findOne({
+      $or: [
+        { username: 'normaluser' },
+        { phone: '09120000004' },
+        { email: 'user@hatefaroma.com' },
+      ],
+    });
+    const regularPassword = await bcrypt.hash('User@123456', 10);
+
+    if (regular) {
+      regular.fullName = 'احسان مرتضوی';
+      regular.username = 'normaluser';
+      regular.email = 'user@hatefaroma.com';
+      regular.phone = '09120000004';
+      regular.password = regularPassword;
+      regular.role = UserRole.USER;
+      regular.deleted = false;
+      await regular.save();
+      this.logger.log('✅ Regular user restored & verified: normaluser / User@123456');
+    } else {
       await this.userModel.create({
         fullName: 'احسان مرتضوی',
         username: 'normaluser',
         email: 'user@hatefaroma.com',
         phone: '09120000004',
-        password,
+        password: regularPassword,
         role: UserRole.USER,
         isVip: false,
+        deleted: false,
       });
-      this.logger.log('Regular user seeded: normaluser / User@123456');
+      this.logger.log('✅ Regular user created: normaluser / User@123456');
     }
   }
 
+  // ====================================================================
+  // 2. Luxury Fragrance Brands - Guaranteed Upsert
+  // ====================================================================
+  private async seedBrands() {
+    const brandsData = [
+      {
+        name: 'تام فورد',
+        nameEn: 'Tom Ford',
+        slug: 'tom-ford',
+        description: 'خانه مد و عطرسازی لوکس آمریکایی، پیشرو در رایحه‌های تاریک، اغواگر و مجلل با ماندگاری افسانه‌ای',
+        logo: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?q=80&w=800&auto=format&fit=crop',
+        order: 1,
+        isFeatured: true,
+        isActive: true,
+      },
+      {
+        name: 'کرید',
+        nameEn: 'Creed',
+        slug: 'creed',
+        description: 'اصیل‌ترین و کهن‌ترین خانه عطر نیش سلطنتی با بیش از ۲۶۰ سال قدمت و ترکیبات دست‌ساز طبیعی',
+        logo: 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?q=80&w=800&auto=format&fit=crop',
+        order: 2,
+        isFeatured: true,
+        isActive: true,
+      },
+      {
+        name: 'کریستین دیور',
+        nameEn: 'Dior',
+        slug: 'dior',
+        description: 'نماد بی‌بدیل ظرافت و لوکس‌گرایی فرانسوی با شاهکارهایی ماندگار در تاریخ عطرسازی دنیا',
+        logo: 'https://images.unsplash.com/photo-1588405748880-12d1d2a59f75?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1588405748880-12d1d2a59f75?q=80&w=800&auto=format&fit=crop',
+        order: 3,
+        isFeatured: true,
+        isActive: true,
+      },
+      {
+        name: 'شنل',
+        nameEn: 'Chanel',
+        slug: 'chanel',
+        description: 'افسانه‌ای جاودانه در عطرشناسی پاریس، مظهر شکوه، وقار و استایل کلاسیک زنانه و مردانه',
+        logo: 'https://images.unsplash.com/photo-1541643600914-78b084683601?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1541643600914-78b084683601?q=80&w=800&auto=format&fit=crop',
+        order: 4,
+        isFeatured: true,
+        isActive: true,
+      },
+      {
+        name: 'میسون فرانسیس کورکجان',
+        nameEn: 'Maison Francis Kurkdjian',
+        slug: 'mfk',
+        description: 'اوج هنر عطرسازی معاصر نیش فرانسه با خلاقیت کم‌نظیر استاد فرانسیس کورکجان',
+        logo: 'https://images.unsplash.com/photo-1547887537-6158d64c35b3?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1547887537-6158d64c35b3?q=80&w=800&auto=format&fit=crop',
+        order: 5,
+        isFeatured: true,
+        isActive: true,
+      },
+      {
+        name: 'ورساچه',
+        nameEn: 'Versace',
+        slug: 'versace',
+        description: 'خانه مد و عطر ایتالیایی، مشهور به ترکیب جسارت مدیترانه‌ای، انرژی و شکوه مدرن',
+        logo: 'https://images.unsplash.com/photo-1616949755610-8c9bbc08f138?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1616949755610-8c9bbc08f138?q=80&w=800&auto=format&fit=crop',
+        order: 6,
+        isFeatured: true,
+        isActive: true,
+      },
+      {
+        name: 'ویکتوریا سکرت',
+        nameEn: "Victoria's Secret",
+        slug: 'victorias-secret',
+        description: 'محبوب‌ترین برند بادی اسپلش، میست و خوشبوکننده‌های درخشان و باطراوت بدن در جهان',
+        logo: 'https://images.unsplash.com/photo-1616949755610-8c9bbc08f138?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1616949755610-8c9bbc08f138?q=80&w=800&auto=format&fit=crop',
+        order: 7,
+        isFeatured: true,
+        isActive: true,
+      },
+      {
+        name: 'د اوردینری',
+        nameEn: 'The Ordinary',
+        slug: 'the-ordinary',
+        description: 'برند تخصصی کانادایی پیشرو در فرمولاسیون‌های علمی مراقبت بالینی پوست و جوان‌سازی',
+        logo: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?q=80&w=400&auto=format&fit=crop',
+        image: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?q=80&w=800&auto=format&fit=crop',
+        order: 8,
+        isFeatured: true,
+        isActive: true,
+      },
+    ];
+
+    for (const b of brandsData) {
+      const exists = await this.brandModel.findOne({ slug: b.slug });
+      if (!exists) {
+        await this.brandModel.create({ ...b, deleted: false, isActive: true });
+      } else {
+        let changed = false;
+        if (exists.deleted) {
+          exists.deleted = false;
+          changed = true;
+        }
+        if (!exists.isActive) {
+          exists.isActive = true;
+          changed = true;
+        }
+        if (exists.name !== b.name) {
+          exists.name = b.name;
+          changed = true;
+        }
+        if (exists.nameEn !== b.nameEn) {
+          exists.nameEn = b.nameEn;
+          changed = true;
+        }
+        if (changed) {
+          await exists.save();
+        }
+      }
+    }
+    this.logger.log('✅ Brands seeded and verified.');
+  }
+
+  // ====================================================================
+  // 3. Categories - Guaranteed Upsert
+  // ====================================================================
   private async seedCategories() {
     const categoriesData = [
       {
@@ -190,11 +405,28 @@ export class SeedService implements OnApplicationBootstrap {
     for (const cat of categoriesData) {
       const exists = await this.categoryModel.findOne({ slug: cat.slug });
       if (!exists) {
-        await this.categoryModel.create(cat);
+        await this.categoryModel.create({ ...cat, deleted: false, isActive: true });
+      } else {
+        let changed = false;
+        if (exists.deleted) {
+          exists.deleted = false;
+          changed = true;
+        }
+        if (!exists.isActive) {
+          exists.isActive = true;
+          changed = true;
+        }
+        if (changed) {
+          await exists.save();
+        }
       }
     }
+    this.logger.log('✅ Categories seeded and verified.');
   }
 
+  // ====================================================================
+  // 4. Attributes - Guaranteed Upsert
+  // ====================================================================
   private async seedAttributes() {
     const attributesData = [
       {
@@ -229,14 +461,14 @@ export class SeedService implements OnApplicationBootstrap {
         name: 'حجم',
         nameEn: 'Volume',
         key: 'volume',
-        possibleValues: ['۱۰۰ میل', '۵۰ میل', '۲۰۰ میل', '۲۵۰ میل', '۳۰ میل'],
+        possibleValues: ['۱۰۰ میل', '۵۰ میل', '۲۰۰ میل', '۲۵۰ میل', '۳۰ میل', '۷۰ میل'],
         unit: 'میل',
       },
       {
         name: 'کشور مبدا',
         nameEn: 'Origin Country',
         key: 'origin_country',
-        possibleValues: ['فرانسه', 'ایتالیا', 'انگلستان', 'آمریکا', 'عمان', 'سوئیس'],
+        possibleValues: ['فرانسه', 'ایتالیا', 'انگلستان', 'آمریکا', 'عمان', 'سوئیس', 'کانادا'],
         unit: '',
       },
       {
@@ -258,11 +490,20 @@ export class SeedService implements OnApplicationBootstrap {
     for (const attr of attributesData) {
       const exists = await this.attributeModel.findOne({ key: attr.key });
       if (!exists) {
-        await this.attributeModel.create(attr);
+        await this.attributeModel.create({ ...attr, deleted: false, isActive: true });
+      } else {
+        if (exists.deleted) {
+          exists.deleted = false;
+          await exists.save();
+        }
       }
     }
+    this.logger.log('✅ Attributes seeded and verified.');
   }
 
+  // ====================================================================
+  // 5. Variant Templates - Guaranteed Upsert
+  // ====================================================================
   private async seedVariantTemplates() {
     const templatesData = [
       {
@@ -330,115 +571,21 @@ export class SeedService implements OnApplicationBootstrap {
     for (const t of templatesData) {
       const exists = await this.variantTemplateModel.findOne({ title: t.title });
       if (!exists) {
-        await this.variantTemplateModel.create(t);
+        await this.variantTemplateModel.create({ ...t, deleted: false, isActive: true });
+      } else {
+        if (exists.deleted) {
+          exists.deleted = false;
+          await exists.save();
+        }
       }
     }
+    this.logger.log('✅ Variant Templates seeded and verified.');
   }
 
+  // ====================================================================
+  // 6. Products Catalog - Guaranteed Upsert & Brand Linking
+  // ====================================================================
   private async seedProducts() {
-    const count = await this.productModel.countDocuments();
-    if (count > 0) {
-      const prodsWithoutVariants = await this.productModel.find({
-        $or: [{ variants: { $exists: false } }, { variants: { $size: 0 } }],
-      });
-      if (prodsWithoutVariants.length > 0) {
-        for (const p of prodsWithoutVariants) {
-          p.variants = [
-            {
-              id: 'var-50ml',
-              title: 'حجم ۵۰ میلی‌لیتر',
-              price: Math.round((p.price * 0.65) / 10000) * 10000,
-              discountPrice: p.discountPrice ? Math.round((p.discountPrice * 0.65) / 10000) * 10000 : null,
-              stockCount: 12,
-              inStock: true,
-              isDefault: false,
-            },
-            {
-              id: 'var-100ml',
-              title: 'حجم ۱۰۰ میلی‌لیتر (استاندارد)',
-              price: p.price,
-              discountPrice: p.discountPrice,
-              stockCount: p.stockCount || 15,
-              inStock: true,
-              isDefault: true,
-            },
-            {
-              id: 'var-200ml',
-              title: 'حجم ۲۰۰ میلی‌لیتر (جامبو)',
-              price: Math.round((p.price * 1.75) / 10000) * 10000,
-              discountPrice: p.discountPrice ? Math.round((p.discountPrice * 1.75) / 10000) * 10000 : null,
-              stockCount: 6,
-              inStock: true,
-              isDefault: false,
-            },
-            {
-              id: 'var-decant-10ml',
-              title: 'دستریز اورجینال ۱۰ میل',
-              price: Math.round((p.price * 0.18) / 10000) * 10000,
-              discountPrice: null,
-              stockCount: 25,
-              inStock: true,
-              isDefault: false,
-            },
-          ];
-          await p.save();
-        }
-      }
-      // Auto-migrate and sync existing products with English descriptions and fix broken image URLs
-      const allProds = await this.productModel.find({});
-      for (const p of allProds) {
-        let changed = false;
-        if (p.images && p.images.length > 0) {
-          p.images = p.images.map((img) => {
-            if (img.includes('1512290900672') || img.includes('photo-1512290900672-1f55b9ab0128')) {
-              changed = true;
-              return 'https://images.unsplash.com/photo-1547887537-6158d64c35b3?q=80&w=800&auto=format&fit=crop';
-            }
-            return img;
-          });
-        }
-        if (!p.descriptionEn) {
-          if (p.slug === 'tom-ford-black-orchid') {
-            p.descriptionEn = `<p>Tom Ford Black Orchid is an iconic, opulent and sensual fragrance. A luxurious blend of rich dark accord, black truffle, French black orchid, and decadent Mexican chocolate for an unforgettable trail.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Truffle, Gardenia, Blackcurrant, Ylang-Ylang, Jasmine, Bergamot, Mandarin</li><li><strong>Heart Notes:</strong> Black Orchid, Spicy Notes, Lotus, Fruity Accords</li><li><strong>Base Notes:</strong> Patchouli, Sandalwood, Incense, Amber, Vetiver, Vanilla, Mexican Chocolate</li></ul>`;
-            p.shortDescriptionEn = 'A luxurious, dark, and seductive signature with extraordinary longevity.';
-            changed = true;
-          } else if (p.slug === 'creed-aventus-men') {
-            p.descriptionEn = `<p>The undisputed king of modern niche fragrances. Creed Aventus celebrates strength, power, and success, opening with intoxicating notes of smoky pineapple, crisp green apple, and bergamot resting on rich birch and fine leather.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Pineapple, Bergamot, Blackcurrant, Apple</li><li><strong>Heart Notes:</strong> Birch, Patchouli, Moroccan Jasmine, Rose</li><li><strong>Base Notes:</strong> Musk, Oakmoss, Ambergris, Vanille</li></ul>`;
-            p.shortDescriptionEn = 'Legendary niche masterpiece for men, radiating confidence and success.';
-            changed = true;
-          } else if (p.slug === 'dior-sauvage-edp') {
-            p.descriptionEn = `<p>Dior Sauvage Eau De Parfum is mysterious and deeply sensual, evoking the twilight hour in the vast desert. Fresh Calabrian bergamot mingles with Papua New Guinean vanilla absolute for a powerful masculine trail.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Calabrian Bergamot, Pepper</li><li><strong>Heart Notes:</strong> Sichuan Pepper, Lavender, Star Anise, Nutmeg</li><li><strong>Base Notes:</strong> Ambroxan, Papua New Guinean Vanilla</li></ul>`;
-            p.shortDescriptionEn = 'The iconic worldwide bestselling masculine fragrance by Dior.';
-            changed = true;
-          } else if (p.slug === 'chanel-coco-mademoiselle') {
-            p.descriptionEn = `<p>The essence of Parisian elegance and bold femininity. Chanel Coco Mademoiselle is a luminous, sensual floral chypre sparkling with fresh orange blossoms, Grasse jasmine, May rose, and noble patchouli.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Orange, Mandarin Orange, Bergamot, Orange Blossom</li><li><strong>Heart Notes:</strong> Turkish Rose, Jasmine, Mimosa, Ylang-Ylang</li><li><strong>Base Notes:</strong> Patchouli, White Musk, Vanilla, Vetiver, Tonka Bean, Opoponax</li></ul>`;
-            p.shortDescriptionEn = 'An unmistakable symbol of Parisian grace, charm, and elegance.';
-            changed = true;
-          } else if (p.slug === 'baccarat-rouge-540-extrait') {
-            p.descriptionEn = `<p>The ultimate extrait masterpiece from Maison Francis Kurkdjian. Red Iranian saffron, Egyptian jasmine grandiflorum, and bitter Moroccan almond elevate the luminous woody amber trail to unmatched luxury.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Bitter Almond, Iranian Saffron</li><li><strong>Heart Notes:</strong> Egyptian Jasmine, Virginian Cedarwood</li><li><strong>Base Notes:</strong> Ambergris, Woody Notes, Musk</li></ul>`;
-            p.shortDescriptionEn = 'VIP Exclusive; the pinnacle of modern niche haute perfumery.';
-            changed = true;
-          } else if (p.slug === 'victorias-secret-pure-seduction') {
-            p.descriptionEn = `<p>A shimmering luxury body mist infused with luminous micro-particles and seductive notes of red plum and sweet freesia. Deeply hydrates and perfumes skin post-shower.</p>`;
-            p.shortDescriptionEn = 'Shimmering fine fragrance body splash with enchanting fruity-floral notes.';
-            changed = true;
-          } else if (p.slug === 'the-ordinary-hyaluronic-acid') {
-            p.descriptionEn = `<p>A multi-depth hydration formula combining ultra-pure low-, medium-, and high-molecular weight hyaluronic acid with Pro-Vitamin B5 for plumper, softer skin.</p>`;
-            p.shortDescriptionEn = 'Intensive multi-molecular hydrating facial serum crafted in Canada.';
-            changed = true;
-          } else if (p.slug === 'versace-dylan-blue-gift-set') {
-            p.descriptionEn = `<p>An exclusive luxury gift set featuring Versace Dylan Blue Eau De Toilette 100ml, perfumed bath & shower gel, and a travel miniature in an opulent Mediterranean gold and navy box.</p>`;
-            p.shortDescriptionEn = 'Masterpiece luxury gift box by Versace, perfect for special occasions.';
-            changed = true;
-          }
-        }
-        if (changed) {
-          await p.save();
-        }
-      }
-      return;
-    }
-
     const menCat = await this.categoryModel.findOne({ slug: 'men-perfumes' });
     const womenCat = await this.categoryModel.findOne({ slug: 'women-perfumes' });
     const unisexCat = await this.categoryModel.findOne({ slug: 'unisex-perfumes' });
@@ -447,11 +594,18 @@ export class SeedService implements OnApplicationBootstrap {
     const giftSetsCat = await this.categoryModel.findOne({ slug: 'gift-sets' });
     const vipNicheCat = await this.categoryModel.findOne({ slug: 'vip-niche' });
 
+    const brandsMap = new Map<string, any>();
+    const allBrands = await this.brandModel.find({ deleted: false });
+    for (const b of allBrands) {
+      brandsMap.set(b.slug, b._id);
+    }
+
     const productsData = [
       {
         title: 'ادو پرفیوم تام فورد بلک ارکید',
         titleEn: 'Tom Ford Black Orchid Eau De Parfum',
         slug: 'tom-ford-black-orchid',
+        brandSlug: 'tom-ford',
         description: `
           <p>عطر تام فورد بلک ارکید یکی از مجلل‌ترین و جاودانه‌ترین عطرهای تاریخ عطرشناسی است. ترکیبی مسحورکننده از ارکیده سیاه، ترافل فرانسوی، ادویه‌های غنی و شکلات تلخ مکزیکی که حسی رازآلود، فریبنده و عمیقاً جذاب را به ارمغان می‌آورد.</p>
           <h3>هرم بویایی:</h3>
@@ -461,7 +615,9 @@ export class SeedService implements OnApplicationBootstrap {
             <li><strong>نت پایه:</strong> نعناع هندی، چوب صندل، عود، شکلات تلخ، وانیل، کهربا</li>
           </ul>
         `,
+        descriptionEn: `<p>Tom Ford Black Orchid is an iconic, opulent and sensual fragrance. A luxurious blend of rich dark accord, black truffle, French black orchid, and decadent Mexican chocolate for an unforgettable trail.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Truffle, Gardenia, Blackcurrant, Ylang-Ylang, Jasmine, Bergamot, Mandarin</li><li><strong>Heart Notes:</strong> Black Orchid, Spicy Notes, Lotus, Fruity Accords</li><li><strong>Base Notes:</strong> Patchouli, Sandalwood, Incense, Amber, Vetiver, Vanilla, Mexican Chocolate</li></ul>`,
         shortDescription: 'رایحه‌ای لوکس، تاریک و فریبنده با ماندگاری شگفت‌انگیز',
+        shortDescriptionEn: 'A luxurious, dark, and seductive signature with extraordinary longevity.',
         price: 8900000,
         discountPrice: 7850000,
         images: [
@@ -491,6 +647,7 @@ export class SeedService implements OnApplicationBootstrap {
         title: 'ادو پرفیوم کرید اونتوس مردانه',
         titleEn: 'Creed Aventus Eau De Parfum For Men',
         slug: 'creed-aventus-men',
+        brandSlug: 'creed',
         description: `
           <p>پادشاه بلامنازع عطرهای جهان؛ کرید اونتوس نمادی از قدرت، پیروزی، وقار و جسارت است. شروعی سرشار از نت‌های آناناس دودی، سیب سبز و ترنج که در بستری از چوب توس و چرم ناب آرام می‌گیرد.</p>
           <h3>هرم بویایی:</h3>
@@ -500,7 +657,9 @@ export class SeedService implements OnApplicationBootstrap {
             <li><strong>نت پایه:</strong> مشک، خزه درخت بلوط، عنبر سائل، وانیل</li>
           </ul>
         `,
+        descriptionEn: `<p>The undisputed king of modern niche fragrances. Creed Aventus celebrates strength, power, and success, opening with intoxicating notes of smoky pineapple, crisp green apple, and bergamot resting on rich birch and fine leather.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Pineapple, Bergamot, Blackcurrant, Apple</li><li><strong>Heart Notes:</strong> Birch, Patchouli, Moroccan Jasmine, Rose</li><li><strong>Base Notes:</strong> Musk, Oakmoss, Ambergris, Vanille</li></ul>`,
         shortDescription: 'پادشاه ادکلن‌های مردانه؛ نماد کاریزما و اعتماد به نفس مطلق',
+        shortDescriptionEn: 'Legendary niche masterpiece for men, radiating confidence and success.',
         price: 18500000,
         discountPrice: 16900000,
         images: [
@@ -530,10 +689,13 @@ export class SeedService implements OnApplicationBootstrap {
         title: 'ادو پرفیوم دیور ساواج',
         titleEn: 'Dior Sauvage Eau De Parfum',
         slug: 'dior-sauvage-edp',
+        brandSlug: 'dior',
         description: `
           <p>دیور ساواج ادو پرفیوم با غنا و عمق بیشتر نسبت به نسخه تویلت، حال و هوایی مرموز از گرگ و میش صحرا را به تصویر می‌کشد. حضور ترنج آبدار کالابریایی در کنار وانیل پاپوآ گینه‌نو حسی بی نهایت جذاب و مردانه می‌آفریند.</p>
         `,
+        descriptionEn: `<p>Dior Sauvage Eau De Parfum is mysterious and deeply sensual, evoking the twilight hour in the vast desert. Fresh Calabrian bergamot mingles with Papua New Guinean vanilla absolute for a powerful masculine trail.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Calabrian Bergamot, Pepper</li><li><strong>Heart Notes:</strong> Sichuan Pepper, Lavender, Star Anise, Nutmeg</li><li><strong>Base Notes:</strong> Ambroxan, Papua New Guinean Vanilla</li></ul>`,
         shortDescription: 'پرطرفدارترین عطر مدرن مردانه در سراسر جهان با امضای دیور',
+        shortDescriptionEn: 'The iconic worldwide bestselling masculine fragrance by Dior.',
         price: 7400000,
         discountPrice: 6650000,
         images: [
@@ -563,10 +725,13 @@ export class SeedService implements OnApplicationBootstrap {
         title: 'ادو پرفیوم شنل کوکو مادمازل زنانه',
         titleEn: 'Chanel Coco Mademoiselle Eau De Parfum',
         slug: 'chanel-coco-mademoiselle',
+        brandSlug: 'chanel',
         description: `
           <p>عصاره ناب ظرافت زنانه پاریسی؛ کوکو مادمازل عطری گلی و شیپر با طراوت گل رز، یاس رازقی و مرکبات پرنشاط است که اعتماد به نفس و لطافت را هم‌زمان به نمایش می‌گذارد.</p>
         `,
+        descriptionEn: `<p>The essence of Parisian elegance and bold femininity. Chanel Coco Mademoiselle is a luminous, sensual floral chypre sparkling with fresh orange blossoms, Grasse jasmine, May rose, and noble patchouli.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Orange, Mandarin Orange, Bergamot, Orange Blossom</li><li><strong>Heart Notes:</strong> Turkish Rose, Jasmine, Mimosa, Ylang-Ylang</li><li><strong>Base Notes:</strong> Patchouli, White Musk, Vanilla, Vetiver, Tonka Bean, Opoponax</li></ul>`,
         shortDescription: 'نماد بی‌بدیل جذابیت و شکوه زنانه؛ منتخب شیک‌پوش‌ترین بانوان',
+        shortDescriptionEn: 'An unmistakable symbol of Parisian grace, charm, and elegance.',
         price: 9800000,
         discountPrice: 8900000,
         images: [
@@ -596,10 +761,13 @@ export class SeedService implements OnApplicationBootstrap {
         title: 'باکارات رژ ۵۴۰ اکستریت د پرفیوم (مخصوص VIP)',
         titleEn: 'Maison Francis Kurkdjian Baccarat Rouge 540 Extrait',
         slug: 'baccarat-rouge-540-extrait',
+        brandSlug: 'mfk',
         description: `
           <p>شاهکار نیش میسون فرانسیس کورکجان در نسخه اکستریت؛ تلفیق زعفران سرخ ایرانی، یاس مصری و بادام تلخ مراکشی با عنبر سائل چوبی و خالص که ردی فراموش‌نشدنی و ابرلوکس در فضا خلق می‌کند.</p>
         `,
+        descriptionEn: `<p>The ultimate extrait masterpiece from Maison Francis Kurkdjian. Red Iranian saffron, Egyptian jasmine grandiflorum, and bitter Moroccan almond elevate the luminous woody amber trail to unmatched luxury.</p><h3>Olfactory Pyramid:</h3><ul><li><strong>Top Notes:</strong> Bitter Almond, Iranian Saffron</li><li><strong>Heart Notes:</strong> Egyptian Jasmine, Virginian Cedarwood</li><li><strong>Base Notes:</strong> Ambergris, Woody Notes, Musk</li></ul>`,
         shortDescription: 'عطر اختصاصی اعضای ویژه VIP؛ شاهکار مطلق عطرشناسی جهان',
+        shortDescriptionEn: 'VIP Exclusive; the pinnacle of modern niche haute perfumery.',
         price: 24500000,
         discountPrice: 21900000,
         images: [
@@ -629,10 +797,13 @@ export class SeedService implements OnApplicationBootstrap {
         title: 'بادی اسپلش شاین ویکتوریا سکرت مدل پیور سداکشن',
         titleEn: 'Victoria’s Secret Pure Seduction Shimmer Body Splash',
         slug: 'victorias-secret-pure-seduction',
+        brandSlug: 'victorias-secret',
         description: `
           <p>بادی اسپلش درخشان با دانه‌های شیمر اکلیلی و رایحه دلپذیر آلو قرمز و گل فریزیا شیرین. آبرسان پوست با رایحه‌ای ملایم و باطراوت برای بعد از حمام.</p>
         `,
+        descriptionEn: `<p>A shimmering luxury body mist infused with luminous micro-particles and seductive notes of red plum and sweet freesia. Deeply hydrates and perfumes skin post-shower.</p>`,
         shortDescription: 'خوشبوکننده براق و لطیف بدن با ماندگاری بالا و رایحه میوه‌ای گلی',
+        shortDescriptionEn: 'Shimmering fine fragrance body splash with enchanting fruity-floral notes.',
         price: 850000,
         discountPrice: 690000,
         images: [
@@ -657,10 +828,13 @@ export class SeedService implements OnApplicationBootstrap {
         title: 'سرم هیالورونیک اسید ۲٪ + B5 اوردینری',
         titleEn: 'The Ordinary Hyaluronic Acid 2% + B5 Serum',
         slug: 'the-ordinary-hyaluronic-acid',
+        brandSlug: 'the-ordinary',
         description: `
           <p>سرم آبرسان عمیق چندلایه حاوی هیالورونیک اسید خالص و پرو ویتامین B5 جهت رفع دهیدراتگی، شادابی و جوانسازی پوست صورت.</p>
         `,
+        descriptionEn: `<p>A multi-depth hydration formula combining ultra-pure low-, medium-, and high-molecular weight hyaluronic acid with Pro-Vitamin B5 for plumper, softer skin.</p>`,
         shortDescription: 'آبرسان فوق‌العاده قوی و پرکننده خطوط ریز پوستی ساخت کانادا',
+        shortDescriptionEn: 'Intensive multi-molecular hydrating facial serum crafted in Canada.',
         price: 950000,
         discountPrice: 790000,
         images: [
@@ -684,10 +858,13 @@ export class SeedService implements OnApplicationBootstrap {
         title: 'ست کادویی لوکس ورساچه دیلان بلو',
         titleEn: 'Versace Dylan Blue Pour Homme Luxury Gift Set',
         slug: 'versace-dylan-blue-gift-set',
+        brandSlug: 'versace',
         description: `
           <p>ست هدیه فوق‌العاده شیک شامل ادو تویلت ۱۰۰ میل ورساچه دیلان بلو، ژل شستشوی بدن معطر و مینیاتوری مسافرتی در بسته‌بندی نفیس طلایی سرمه‌ای.</p>
         `,
+        descriptionEn: `<p>An exclusive luxury gift set featuring Versace Dylan Blue Eau De Toilette 100ml, perfumed bath & shower gel, and a travel miniature in an opulent Mediterranean gold and navy box.</p>`,
         shortDescription: 'پکیج کادویی شاهکار ورساچه مناسب هدیه دادن در مناسبت‌های خاص',
+        shortDescriptionEn: 'Masterpiece luxury gift box by Versace, perfect for special occasions.',
         price: 6800000,
         discountPrice: 5900000,
         images: [
@@ -711,11 +888,98 @@ export class SeedService implements OnApplicationBootstrap {
       },
     ];
 
+    const generateDefaultVariants = (p: any) => [
+      {
+        id: 'var-50ml',
+        title: 'حجم ۵۰ میلی‌لیتر',
+        titleEn: '50 ml',
+        price: Math.round((p.price * 0.65) / 10000) * 10000,
+        discountPrice: p.discountPrice ? Math.round((p.discountPrice * 0.65) / 10000) * 10000 : null,
+        stockCount: 12,
+        inStock: true,
+        isDefault: false,
+      },
+      {
+        id: 'var-100ml',
+        title: 'حجم ۱۰۰ میلی‌لیتر (استاندارد)',
+        titleEn: '100 ml (Standard)',
+        price: p.price,
+        discountPrice: p.discountPrice,
+        stockCount: p.stockCount || 15,
+        inStock: true,
+        isDefault: true,
+      },
+      {
+        id: 'var-200ml',
+        title: 'حجم ۲۰۰ میلی‌لیتر (جامبو)',
+        titleEn: '200 ml (Jumbo)',
+        price: Math.round((p.price * 1.75) / 10000) * 10000,
+        discountPrice: p.discountPrice ? Math.round((p.discountPrice * 1.75) / 10000) * 10000 : null,
+        stockCount: 6,
+        inStock: true,
+        isDefault: false,
+      },
+      {
+        id: 'var-decant-10ml',
+        title: 'دستریز اورجینال ۱۰ میل',
+        titleEn: '10 ml Decant',
+        price: Math.round((p.price * 0.18) / 10000) * 10000,
+        discountPrice: null,
+        stockCount: 25,
+        inStock: true,
+        isDefault: false,
+      },
+    ];
+
     for (const p of productsData) {
-      await this.productModel.create(p);
+      const brandId = brandsMap.get(p.brandSlug);
+      const exists = await this.productModel.findOne({ slug: p.slug });
+      if (!exists) {
+        await this.productModel.create({
+          ...p,
+          brand: brandId || null,
+          brands: brandId ? [brandId] : [],
+          variants: generateDefaultVariants(p),
+          deleted: false,
+        });
+      } else {
+        let changed = false;
+        if (exists.deleted) {
+          exists.deleted = false;
+          changed = true;
+        }
+        if (!exists.inStock) {
+          exists.inStock = true;
+          changed = true;
+        }
+        if (brandId && (!exists.brand || exists.brand.toString() !== brandId.toString())) {
+          exists.brand = brandId;
+          exists.brands = [brandId];
+          changed = true;
+        }
+        if (!exists.variants || exists.variants.length === 0) {
+          exists.variants = generateDefaultVariants(p);
+          changed = true;
+        }
+        if (!exists.descriptionEn && p.descriptionEn) {
+          exists.descriptionEn = p.descriptionEn;
+          changed = true;
+        }
+        if (!exists.shortDescriptionEn && p.shortDescriptionEn) {
+          exists.shortDescriptionEn = p.shortDescriptionEn;
+          changed = true;
+        }
+        if (changed) {
+          await exists.save();
+        }
+      }
     }
+    this.logger.log('✅ Products catalog seeded and verified.');
   }
 
+  // ====================================================================
+  // 7. VIP Plans - Guaranteed Upsert
+  // ====================================================================
   private async seedVipPlans() {
     const plansData = [
       {
@@ -803,8 +1067,10 @@ export class SeedService implements OnApplicationBootstrap {
         $or: [{ title: plan.title }, { titleEn: plan.titleEn }],
       });
       if (!existing) {
-        await this.vipPlanModel.create(plan);
+        await this.vipPlanModel.create({ ...plan, deleted: false });
       } else {
+        existing.deleted = false;
+        existing.isActive = true;
         existing.titleEn = plan.titleEn;
         existing.descriptionEn = plan.descriptionEn;
         existing.perksEn = plan.perksEn;
@@ -812,8 +1078,12 @@ export class SeedService implements OnApplicationBootstrap {
         await existing.save();
       }
     }
+    this.logger.log('✅ VIP Plans seeded and verified.');
   }
 
+  // ====================================================================
+  // 8. Coupons - Guaranteed Upsert
+  // ====================================================================
   private async seedCoupons() {
     const couponsData = [
       {
@@ -848,11 +1118,21 @@ export class SeedService implements OnApplicationBootstrap {
     for (const c of couponsData) {
       const exists = await this.couponModel.findOne({ code: c.code });
       if (!exists) {
-        await this.couponModel.create(c);
+        await this.couponModel.create({ ...c, deleted: false, isActive: true });
+      } else {
+        if (exists.deleted) {
+          exists.deleted = false;
+          exists.isActive = true;
+          await exists.save();
+        }
       }
     }
+    this.logger.log('✅ Coupons seeded and verified.');
   }
 
+  // ====================================================================
+  // 9. Page Sections & VIP Customizer - Guaranteed Upsert
+  // ====================================================================
   private async seedPageSections() {
     const sectionsData = [
       {
@@ -944,10 +1224,14 @@ export class SeedService implements OnApplicationBootstrap {
       const exists = await this.pageSectionModel.findOne({ sectionKey: sec.sectionKey });
       if (!exists) {
         await this.pageSectionModel.create(sec);
-      } else if (sec.sectionKey === 'footer_settings' && !exists.config) {
-        exists.config = sec.config;
+      } else {
+        if (sec.sectionKey === 'footer_settings' && !exists.config) {
+          exists.config = sec.config;
+        }
+        exists.isVisible = true;
         await exists.save();
       }
     }
+    this.logger.log('✅ Page Sections seeded and verified.');
   }
 }

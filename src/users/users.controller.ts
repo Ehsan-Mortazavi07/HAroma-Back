@@ -71,8 +71,13 @@ export class UsersController {
   @Patch('admin/users/:id/role')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async setRole(@Param('id') id: string, @Body('role') role: UserRole) {
-    return this.usersService.setRole(id, role);
+  async setRole(
+    @Param('id') id: string,
+    @Body('role') role: UserRole,
+    @CurrentUser() currentUser: any,
+  ) {
+    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
+    return this.usersService.setRole(id, role, currentUserId);
   }
 
   @Patch('admin/users/:id/vip')
@@ -89,7 +94,8 @@ export class UsersController {
   @Delete('admin/users/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async deleteUser(@Param('id') id: string) {
-    return this.usersService.softDelete(id);
+  async deleteUser(@Param('id') id: string, @CurrentUser() currentUser: any) {
+    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
+    return this.usersService.softDelete(id, currentUserId);
   }
 }

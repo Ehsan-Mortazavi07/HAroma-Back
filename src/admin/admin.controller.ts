@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard, AdminGuard, SuperAdminOnlyGuard } from '../common/guards/auth.guards';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UsersService } from '../users/users.service';
 import { ProductsService } from '../products/products.service';
 import { CategoriesService } from '../categories/categories.service';
@@ -338,8 +339,13 @@ export class AdminController {
 
   @Patch('users/:id/role')
   @UseGuards(SuperAdminOnlyGuard)
-  async updateUserRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto) {
-    return this.usersService.setRole(id, dto.role as UserRole);
+  async updateUserRole(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserRoleDto,
+    @CurrentUser() currentUser: any,
+  ) {
+    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
+    return this.usersService.setRole(id, dto.role as UserRole, currentUserId);
   }
 
   @Patch('users/:id/vip')
@@ -350,8 +356,9 @@ export class AdminController {
 
   @Delete('users/:id')
   @UseGuards(SuperAdminOnlyGuard)
-  async deleteUser(@Param('id') id: string) {
-    return this.usersService.softDelete(id);
+  async deleteUser(@Param('id') id: string, @CurrentUser() currentUser: any) {
+    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
+    return this.usersService.softDelete(id, currentUserId);
   }
 
   @Patch('users/bulk/vip')
@@ -366,8 +373,9 @@ export class AdminController {
 
   @Post('users/bulk/delete')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteUsers(@Body('ids') ids: string[]) {
-    return this.usersService.bulkSoftDelete(ids);
+  async bulkDeleteUsers(@Body('ids') ids: string[], @CurrentUser() currentUser: any) {
+    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
+    return this.usersService.bulkSoftDelete(ids, currentUserId);
   }
 
   // ----------------------------------------------------

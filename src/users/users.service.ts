@@ -220,8 +220,15 @@ export class UsersService implements OnModuleInit {
     return this.findById(id);
   }
 
-  async setRole(id: string, role: UserRole): Promise<UserDocument> {
+  async setRole(id: string, role: UserRole, currentUserId?: string): Promise<UserDocument> {
     const user = await this.findById(id);
+    if (
+      currentUserId &&
+      (id === currentUserId || user._id.toString() === currentUserId) &&
+      role !== UserRole.ADMIN
+    ) {
+      throw new BadRequestException('شما نمی‌توانید سطح دسترسی حساب کاربری جاری خود را تنزل دهید.');
+    }
     user.role = role;
     return user.save();
   }
@@ -243,8 +250,15 @@ export class UsersService implements OnModuleInit {
     return user.save();
   }
 
-  async softDelete(id: string): Promise<{ success: boolean; message: string }> {
+  async softDelete(id: string, currentUserId?: string): Promise<{ success: boolean; message: string }> {
     const user = await this.findById(id);
+    const targetIdStr = user._id.toString();
+    const currentIdStr = currentUserId?.toString();
+
+    if (currentIdStr && (id === currentIdStr || targetIdStr === currentIdStr)) {
+      throw new BadRequestException('امکان حذف حساب کاربری جاری خودتان وجود ندارد.');
+    }
+
     user.deleted = true;
     await user.save();
     return { success: true, message: 'کاربر با موفقیت حذف شد.' };
@@ -269,10 +283,20 @@ export class UsersService implements OnModuleInit {
     return { success: true, modifiedCount: result.modifiedCount };
   }
 
-  async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
+  async bulkSoftDelete(ids: string[], currentUserId?: string): Promise<{ success: boolean; modifiedCount: number }> {
+    const currentIdStr = currentUserId?.toString();
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
+      .filter((id) => !currentIdStr || id.toString() !== currentIdStr)
       .map((id) => new Types.ObjectId(id));
+
+    if (validIds.length === 0) {
+      if (currentIdStr && ids.some((id) => id.toString() === currentIdStr)) {
+        throw new BadRequestException('امکان حذف حساب کاربری جاری خودتان وجود ندارد.');
+      }
+      return { success: true, modifiedCount: 0 };
+    }
+
     const result = await this.userModel.updateMany(
       { _id: { $in: validIds }, deleted: false },
       { $set: { deleted: true } },
