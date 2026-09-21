@@ -72,21 +72,12 @@ export class AdminController {
     return this.productsService.findAll(query);
   }
 
-  @Get('products/:id')
-  async getProduct(@Param('id') id: string) {
-    return this.productsService.findById(id);
-  }
-
   @Post('products')
   async createProduct(@Body() dto: CreateProductDto) {
     return this.productsService.create(dto);
   }
 
-  @Patch('products/:id')
-  async updateProduct(@Param('id') id: string, @Body() dto: UpdateProductDto) {
-    return this.productsService.update(id, dto);
-  }
-
+  // Bulk operations MUST come before :id routes to avoid NestJS matching 'bulk' as an :id param
   @Patch('products/bulk/status')
   async bulkUpdateProductStatus(@Body() dto: BulkUpdateProductStatusDto) {
     return this.productsService.bulkUpdateStatus(dto.ids, dto.isPublished);
@@ -96,6 +87,16 @@ export class AdminController {
   @UseGuards(SuperAdminOnlyGuard)
   async bulkDeleteProducts(@Body() dto: BulkDeleteProductsDto) {
     return this.productsService.bulkSoftDelete(dto.ids);
+  }
+
+  @Get('products/:id')
+  async getProduct(@Param('id') id: string) {
+    return this.productsService.findById(id);
+  }
+
+  @Patch('products/:id')
+  async updateProduct(@Param('id') id: string, @Body() dto: UpdateProductDto) {
+    return this.productsService.update(id, dto);
   }
 
   @Delete('products/:id')
@@ -112,14 +113,26 @@ export class AdminController {
     return this.categoriesService.findAll();
   }
 
-  @Get('categories/:id')
-  async getCategory(@Param('id') id: string) {
-    return this.categoriesService.findById(id);
-  }
-
   @Post('categories')
   async createCategory(@Body() dto: CreateCategoryDto) {
     return this.categoriesService.create(dto);
+  }
+
+  // Bulk operations MUST come before :id routes
+  @Patch('categories/bulk/status')
+  async bulkUpdateCategoriesStatus(@Body('ids') ids: string[], @Body('isActive') isActive: boolean) {
+    return this.categoriesService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('categories/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteCategories(@Body('ids') ids: string[]) {
+    return this.categoriesService.bulkSoftDelete(ids);
+  }
+
+  @Get('categories/:id')
+  async getCategory(@Param('id') id: string) {
+    return this.categoriesService.findById(id);
   }
 
   @Patch('categories/:id')
@@ -132,17 +145,6 @@ export class AdminController {
     return this.categoriesService.softDelete(id);
   }
 
-  @Patch('categories/bulk/status')
-  async bulkUpdateCategoriesStatus(@Body('ids') ids: string[], @Body('isActive') isActive: boolean) {
-    return this.categoriesService.bulkUpdateStatus(ids, isActive);
-  }
-
-  @Post('categories/bulk/delete')
-  @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteCategories(@Body('ids') ids: string[]) {
-    return this.categoriesService.bulkSoftDelete(ids);
-  }
-
   // ----------------------------------------------------
   // Attributes & Quick Create
   // ----------------------------------------------------
@@ -151,19 +153,26 @@ export class AdminController {
     return this.attributesService.findAll();
   }
 
-  @Get('attributes/:id')
-  async getAttribute(@Param('id') id: string) {
-    return this.attributesService.findById(id);
-  }
-
   @Post('attributes')
   async createAttribute(@Body() dto: CreateAttributeDto) {
     return this.attributesService.create(dto);
   }
 
+  // Static/Bulk operations MUST come before :id routes
   @Post('attributes/quick-create')
   async quickCreateAttribute(@Body() dto: QuickCreateAttributeDto) {
     return this.attributesService.quickCreate(dto);
+  }
+
+  @Post('attributes/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteAttributes(@Body('ids') ids: string[]) {
+    return this.attributesService.bulkSoftDelete(ids);
+  }
+
+  @Get('attributes/:id')
+  async getAttribute(@Param('id') id: string) {
+    return this.attributesService.findById(id);
   }
 
   @Patch('attributes/:id')
@@ -174,12 +183,6 @@ export class AdminController {
   @Delete('attributes/:id')
   async deleteAttribute(@Param('id') id: string) {
     return this.attributesService.softDelete(id);
-  }
-
-  @Post('attributes/bulk/delete')
-  @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteAttributes(@Body('ids') ids: string[]) {
-    return this.attributesService.bulkSoftDelete(ids);
   }
 
   // ----------------------------------------------------
@@ -200,20 +203,7 @@ export class AdminController {
     });
   }
 
-  @Get('orders/:id')
-  async getOrder(@Param('id') id: string) {
-    return this.ordersService.findById(id);
-  }
-
-  @Patch('orders/:id/status')
-  async updateOrderStatus(
-    @Param('id') id: string,
-    @Body('status') status: OrderStatus,
-    @Body('trackingCode') trackingCode?: string,
-  ) {
-    return this.ordersService.updateStatus(id, { status, trackingCode });
-  }
-
+  // Bulk operations MUST come before :id routes to prevent matching 'bulk' as :id
   @Patch('orders/bulk/status')
   async bulkUpdateOrdersStatus(
     @Body('ids') ids: string[],
@@ -226,6 +216,20 @@ export class AdminController {
   @UseGuards(SuperAdminOnlyGuard)
   async bulkDeleteOrders(@Body('ids') ids: string[]) {
     return this.ordersService.bulkSoftDelete(ids);
+  }
+
+  @Get('orders/:id')
+  async getOrder(@Param('id') id: string) {
+    return this.ordersService.findById(id);
+  }
+
+  @Patch('orders/:id/status')
+  async updateOrderStatus(
+    @Param('id') id: string,
+    @Body('status') status: OrderStatus,
+    @Body('trackingCode') trackingCode?: string,
+  ) {
+    return this.ordersService.updateStatus(id, { status, trackingCode });
   }
 
   @Delete('orders/:id')
@@ -247,16 +251,7 @@ export class AdminController {
     return this.couponsService.create(dto);
   }
 
-  @Patch('coupons/:id')
-  async updateCoupon(@Param('id') id: string, @Body() dto: Partial<CreateCouponDto>) {
-    return this.couponsService.update(id, dto);
-  }
-
-  @Delete('coupons/:id')
-  async deleteCoupon(@Param('id') id: string) {
-    return this.couponsService.softDelete(id);
-  }
-
+  // Bulk operations MUST come before :id routes
   @Patch('coupons/bulk/status')
   async bulkUpdateCouponsStatus(
     @Body('ids') ids: string[],
@@ -269,6 +264,16 @@ export class AdminController {
   @UseGuards(SuperAdminOnlyGuard)
   async bulkDeleteCoupons(@Body('ids') ids: string[]) {
     return this.couponsService.bulkSoftDelete(ids);
+  }
+
+  @Patch('coupons/:id')
+  async updateCoupon(@Param('id') id: string, @Body() dto: Partial<CreateCouponDto>) {
+    return this.couponsService.update(id, dto);
+  }
+
+  @Delete('coupons/:id')
+  async deleteCoupon(@Param('id') id: string) {
+    return this.couponsService.softDelete(id);
   }
 
   // ----------------------------------------------------
@@ -284,16 +289,7 @@ export class AdminController {
     return this.vipPlansService.create(dto);
   }
 
-  @Patch('vip-plans/:id')
-  async updateVipPlan(@Param('id') id: string, @Body() dto: UpdateVipPlanDto) {
-    return this.vipPlansService.update(id, dto);
-  }
-
-  @Delete('vip-plans/:id')
-  async deleteVipPlan(@Param('id') id: string) {
-    return this.vipPlansService.softDelete(id);
-  }
-
+  // Bulk operations MUST come before :id routes
   @Patch('vip-plans/bulk/status')
   async bulkUpdateVipPlansStatus(
     @Body('ids') ids: string[],
@@ -306,6 +302,16 @@ export class AdminController {
   @UseGuards(SuperAdminOnlyGuard)
   async bulkDeleteVipPlans(@Body('ids') ids: string[]) {
     return this.vipPlansService.bulkSoftDelete(ids);
+  }
+
+  @Patch('vip-plans/:id')
+  async updateVipPlan(@Param('id') id: string, @Body() dto: UpdateVipPlanDto) {
+    return this.vipPlansService.update(id, dto);
+  }
+
+  @Delete('vip-plans/:id')
+  async deleteVipPlan(@Param('id') id: string) {
+    return this.vipPlansService.softDelete(id);
   }
 
   // ----------------------------------------------------
@@ -326,15 +332,33 @@ export class AdminController {
     });
   }
 
-  @Get('users/:id')
-  async getUser(@Param('id') id: string) {
-    return this.usersService.findById(id);
-  }
-
   @Post('users')
   @UseGuards(SuperAdminOnlyGuard)
   async createUser(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
+  }
+
+  // Bulk operations MUST come before :id routes to avoid matching 'bulk' as an :id param
+  @Patch('users/bulk/vip')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkUpdateUsersVip(
+    @Body('ids') ids: string[],
+    @Body('isVip') isVip: boolean,
+    @Body('durationDays') durationDays?: number,
+  ) {
+    return this.usersService.bulkUpdateVip(ids, isVip, durationDays);
+  }
+
+  @Post('users/bulk/delete')
+  @UseGuards(SuperAdminOnlyGuard)
+  async bulkDeleteUsers(@Body('ids') ids: string[], @CurrentUser() currentUser: any) {
+    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
+    return this.usersService.bulkSoftDelete(ids, currentUserId);
+  }
+
+  @Get('users/:id')
+  async getUser(@Param('id') id: string) {
+    return this.usersService.findById(id);
   }
 
   @Patch('users/:id')
@@ -365,23 +389,6 @@ export class AdminController {
   async deleteUser(@Param('id') id: string, @CurrentUser() currentUser: any) {
     const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
     return this.usersService.softDelete(id, currentUserId);
-  }
-
-  @Patch('users/bulk/vip')
-  @UseGuards(SuperAdminOnlyGuard)
-  async bulkUpdateUsersVip(
-    @Body('ids') ids: string[],
-    @Body('isVip') isVip: boolean,
-    @Body('durationDays') durationDays?: number,
-  ) {
-    return this.usersService.bulkUpdateVip(ids, isVip, durationDays);
-  }
-
-  @Post('users/bulk/delete')
-  @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteUsers(@Body('ids') ids: string[], @CurrentUser() currentUser: any) {
-    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
-    return this.usersService.bulkSoftDelete(ids, currentUserId);
   }
 
   // ----------------------------------------------------

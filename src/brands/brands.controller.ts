@@ -45,18 +45,36 @@ export class BrandsController {
     return this.brandsService.findAll({ q, includeInactive: true });
   }
 
-  @Get('admin/brands/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
-  async adminGetBrand(@Param('id') id: string) {
-    return this.brandsService.findById(id);
-  }
-
   @Post('admin/brands')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async adminCreateBrand(@Body() dto: CreateBrandDto) {
     return this.brandsService.create(dto);
+  }
+
+  // Bulk operations MUST come before :id routes
+  @Patch('admin/brands/bulk/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminBulkUpdateStatus(
+    @Body('ids') ids: string[],
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.brandsService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('admin/brands/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDelete(@Body('ids') ids: string[]) {
+    return this.brandsService.bulkSoftDelete(ids);
+  }
+
+  @Get('admin/brands/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminGetBrand(@Param('id') id: string) {
+    return this.brandsService.findById(id);
   }
 
   @Patch('admin/brands/:id')
@@ -74,22 +92,5 @@ export class BrandsController {
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async adminDeleteBrand(@Param('id') id: string) {
     return this.brandsService.softDelete(id);
-  }
-
-  @Patch('admin/brands/bulk/status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
-  async adminBulkUpdateStatus(
-    @Body('ids') ids: string[],
-    @Body('isActive') isActive: boolean,
-  ) {
-    return this.brandsService.bulkUpdateStatus(ids, isActive);
-  }
-
-  @Post('admin/brands/bulk/delete')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async adminBulkDelete(@Body('ids') ids: string[]) {
-    return this.brandsService.bulkSoftDelete(ids);
   }
 }

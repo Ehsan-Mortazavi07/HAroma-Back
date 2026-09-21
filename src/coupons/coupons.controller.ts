@@ -34,6 +34,24 @@ export class CouponsController {
     return this.couponsService.findAll({ q });
   }
 
+  // Bulk operations MUST come before :id routes
+  @Patch('admin/coupons/bulk/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkUpdateStatus(
+    @Body('ids') ids: string[],
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.couponsService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('admin/coupons/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDelete(@Body('ids') ids: string[]) {
+    return this.couponsService.bulkSoftDelete(ids);
+  }
+
   @Get('admin/coupons/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)

@@ -67,6 +67,24 @@ export class OrdersController {
     return this.ordersService.getDashboardStats();
   }
 
+  // Bulk operations MUST come before :id routes
+  @Patch('admin/orders/bulk/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminBulkUpdateStatus(
+    @Body('ids') ids: string[],
+    @Body('status') status: OrderStatus,
+  ) {
+    return this.ordersService.bulkUpdateStatus(ids, status);
+  }
+
+  @Post('admin/orders/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDeleteOrders(@Body('ids') ids: string[]) {
+    return this.ordersService.bulkSoftDelete(ids);
+  }
+
   @Get('admin/orders/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)

@@ -47,6 +47,29 @@ export class UsersController {
     return this.usersService.findAll({ page, pageSize, q, role });
   }
 
+  // Bulk operations MUST come before :id routes
+  @Patch('admin/users/bulk/vip')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async bulkUpdateUsersVip(
+    @Body('ids') ids: string[],
+    @Body('isVip') isVip: boolean,
+    @Body('durationDays') durationDays?: number,
+  ) {
+    return this.usersService.bulkUpdateVip(ids, isVip, durationDays);
+  }
+
+  @Post('admin/users/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async bulkDeleteUsers(
+    @Body('ids') ids: string[],
+    @CurrentUser() currentUser: any,
+  ) {
+    const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
+    return this.usersService.bulkSoftDelete(ids, currentUserId);
+  }
+
   @Get('admin/users/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)

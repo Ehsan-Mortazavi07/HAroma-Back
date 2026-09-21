@@ -33,6 +33,24 @@ export class VipPlansController {
     return this.vipPlansService.findAll(false);
   }
 
+  // Bulk operations MUST come before :id routes
+  @Patch('admin/vip-plans/bulk/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkUpdateStatus(
+    @Body('ids') ids: string[],
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.vipPlansService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('admin/vip-plans/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDelete(@Body('ids') ids: string[]) {
+    return this.vipPlansService.bulkSoftDelete(ids);
+  }
+
   @Get('admin/vip-plans/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)

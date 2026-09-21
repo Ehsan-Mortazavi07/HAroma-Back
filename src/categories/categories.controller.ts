@@ -45,6 +45,24 @@ export class CategoriesController {
     return this.categoriesService.findAll({ q, includeInactive: true });
   }
 
+  // Bulk operations MUST come before :id routes
+  @Patch('admin/categories/bulk/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async adminBulkUpdateStatus(
+    @Body('ids') ids: string[],
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.categoriesService.bulkUpdateStatus(ids, isActive);
+  }
+
+  @Post('admin/categories/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDelete(@Body('ids') ids: string[]) {
+    return this.categoriesService.bulkSoftDelete(ids);
+  }
+
   @Get('admin/categories/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)

@@ -57,6 +57,14 @@ export class AttributesController {
     return this.attributesService.quickCreate(dto);
   }
 
+  // Bulk operations MUST come before :id routes
+  @Post('admin/attributes/bulk/delete')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminBulkDeleteAttributes(@Body('ids') ids: string[]) {
+    return this.attributesService.bulkSoftDelete(ids);
+  }
+
   @Patch('admin/attributes/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
