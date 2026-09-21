@@ -42,6 +42,17 @@ export class CreateUserDto {
   role?: UserRole;
 
   @IsOptional()
+  @IsBoolean()
+  isVip?: boolean;
+
+  @IsOptional()
+  vipExpiresAt?: Date;
+
+  @IsOptional()
+  @IsString()
+  avatar?: string;
+
+  @IsOptional()
   @IsString()
   birthDate?: string;
 
