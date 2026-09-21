@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { PageSection, PageSectionDocument } from './schemas/page-section.schema';
 import { UpdatePageSectionDto } from './dtos';
 
@@ -23,9 +23,16 @@ export class PageSectionsService {
     return this.pageSectionModel.find({ deleted: false }).sort({ order: 1 }).exec();
   }
 
-  async findByKey(sectionKey: string): Promise<PageSectionDocument> {
+  async findByKey(sectionKeyOrId: string): Promise<PageSectionDocument> {
+    const isObjectId = Types.ObjectId.isValid(sectionKeyOrId);
     const section = await this.pageSectionModel
-      .findOne({ sectionKey, deleted: false })
+      .findOne({
+        $or: [
+          { sectionKey: sectionKeyOrId },
+          ...(isObjectId ? [{ _id: new Types.ObjectId(sectionKeyOrId) }] : []),
+        ],
+        deleted: false,
+      })
       .exec();
     if (!section) {
       throw new NotFoundException('بخش مورد نظر یافت نشد.');
@@ -34,30 +41,51 @@ export class PageSectionsService {
   }
 
   async updateByKey(
-    sectionKey: string,
+    sectionKeyOrId: string,
     dto: UpdatePageSectionDto,
   ): Promise<PageSectionDocument> {
-    let section = await this.pageSectionModel.findOne({ sectionKey, deleted: false });
+    const isObjectId = Types.ObjectId.isValid(sectionKeyOrId);
+    let section = await this.pageSectionModel.findOne({
+      $or: [
+        { sectionKey: sectionKeyOrId },
+        ...(isObjectId ? [{ _id: new Types.ObjectId(sectionKeyOrId) }] : []),
+      ],
+      deleted: false,
+    });
     if (!section) {
       section = new this.pageSectionModel({
-        sectionKey,
-        title: dto.title || sectionKey,
-        ...dto,
+        sectionKey: sectionKeyOrId,
+        title: dto.title || sectionKeyOrId,
+        deleted: false,
+        isVisible: dto.isVisible ?? true,
+        isVipOnly: dto.isVipOnly ?? false,
+        order: dto.order ?? 1,
+        banners: dto.banners ?? [],
+        config: dto.config ?? {},
       });
+      if (dto.titleEn) section.titleEn = dto.titleEn;
+      if (dto.subtitle) section.subtitle = dto.subtitle;
     } else {
-      Object.assign(section, dto);
+      if (dto.title !== undefined) section.title = dto.title;
+      if (dto.titleEn !== undefined) section.titleEn = dto.titleEn;
+      if (dto.subtitle !== undefined) section.subtitle = dto.subtitle;
+      if (dto.isVisible !== undefined) section.isVisible = dto.isVisible;
+      if (dto.isVipOnly !== undefined) section.isVipOnly = dto.isVipOnly;
+      if (dto.order !== undefined) section.order = dto.order;
+      if (dto.banners !== undefined) section.banners = dto.banners;
+      if (dto.config !== undefined) section.config = dto.config;
     }
     return section.save();
   }
 
-  async toggleVipOnly(sectionKey: string, isVipOnly: boolean): Promise<PageSectionDocument> {
-    const section = await this.findByKey(sectionKey);
+  async toggleVipOnly(sectionKeyOrId: string, isVipOnly: boolean): Promise<PageSectionDocument> {
+    const section = await this.findByKey(sectionKeyOrId);
     section.isVipOnly = isVipOnly;
     return section.save();
   }
 
-  async toggleVisibility(sectionKey: string, isVisible: boolean): Promise<PageSectionDocument> {
-    const section = await this.findByKey(sectionKey);
+  async toggleVisibility(sectionKeyOrId: string, isVisible: boolean): Promise<PageSectionDocument> {
+    const section = await this.findByKey(sectionKeyOrId);
     section.isVisible = isVisible;
     return section.save();
   }
