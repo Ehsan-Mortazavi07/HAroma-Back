@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
@@ -8,13 +8,18 @@ import { Brand, BrandDocument } from '../brands/schemas/brand.schema';
 import { AttributesService } from '../attributes/attributes.service';
 
 @Injectable()
-export class ProductsService {
+export class ProductsService implements OnModuleInit {
   constructor(
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
     @InjectModel(Brand.name) private brandModel: Model<BrandDocument>,
     private attributesService: AttributesService,
   ) {}
+
+  async onModuleInit() {
+    // Purge legacy soft-deleted documents from database
+    await this.productModel.deleteMany({ deleted: true }).catch(() => {});
+  }
 
   async create(createProductDto: CreateProductDto): Promise<ProductDocument> {
     const slug = createProductDto.slug.toLowerCase().trim();
@@ -430,17 +435,15 @@ export class ProductsService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.productModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.productModel.deleteMany({
+      _id: { $in: validIds },
+    });
+    return { success: true, modifiedCount: result.deletedCount || 0 };
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const product = await this.findById(id);
-    product.deleted = true;
-    await product.save();
+    await this.productModel.deleteOne({ _id: product._id });
     return { success: true, message: 'محصول با موفقیت حذف شد.' };
   }
 

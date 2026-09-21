@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -10,10 +11,15 @@ import { Coupon, CouponDocument } from './schemas/coupon.schema';
 import { CreateCouponDto, ValidateCouponDto } from './dtos';
 
 @Injectable()
-export class CouponsService {
+export class CouponsService implements OnModuleInit {
   constructor(
     @InjectModel(Coupon.name) private couponModel: Model<CouponDocument>,
   ) {}
+
+  async onModuleInit() {
+    // Purge legacy soft-deleted documents from database
+    await this.couponModel.deleteMany({ deleted: true }).catch(() => {});
+  }
 
   async create(createCouponDto: CreateCouponDto): Promise<CouponDocument> {
     const code = createCouponDto.code.toUpperCase().trim();
@@ -117,8 +123,7 @@ export class CouponsService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const coupon = await this.findById(id);
-    coupon.deleted = true;
-    await coupon.save();
+    await this.couponModel.deleteOne({ _id: coupon._id });
     return { success: true, message: 'کد تخفیف با موفقیت حذف شد.' };
   }
 
@@ -140,10 +145,9 @@ export class CouponsService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.couponModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.couponModel.deleteMany({
+      _id: { $in: validIds },
+    });
+    return { success: true, modifiedCount: result.deletedCount || 0 };
   }
 }

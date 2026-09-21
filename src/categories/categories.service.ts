@@ -1,14 +1,19 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
 import { CreateCategoryDto, UpdateCategoryDto } from './dtos';
 
 @Injectable()
-export class CategoriesService {
+export class CategoriesService implements OnModuleInit {
   constructor(
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
   ) {}
+
+  async onModuleInit() {
+    // Purge legacy soft-deleted documents from database
+    await this.categoryModel.deleteMany({ deleted: true }).catch(() => {});
+  }
 
   async create(createCategoryDto: CreateCategoryDto): Promise<CategoryDocument> {
     const existing = await this.categoryModel.findOne({
@@ -118,8 +123,7 @@ export class CategoriesService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const category = await this.findById(id);
-    category.deleted = true;
-    await category.save();
+    await this.categoryModel.deleteOne({ _id: category._id });
     return { success: true, message: 'دسته‌بندی با موفقیت حذف شد.' };
   }
 
@@ -141,10 +145,9 @@ export class CategoriesService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.categoryModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.categoryModel.deleteMany({
+      _id: { $in: validIds },
+    });
+    return { success: true, modifiedCount: result.deletedCount || 0 };
   }
 }

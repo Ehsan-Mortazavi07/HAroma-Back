@@ -228,6 +228,12 @@ export class AdminController {
     return this.ordersService.bulkSoftDelete(ids);
   }
 
+  @Delete('orders/:id')
+  @UseGuards(SuperAdminOnlyGuard)
+  async deleteOrder(@Param('id') id: string) {
+    return this.ordersService.deleteOne(id);
+  }
+
   // ----------------------------------------------------
   // Coupons Management
   // ----------------------------------------------------

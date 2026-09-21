@@ -1,14 +1,19 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Attribute, AttributeDocument } from './schemas/attribute.schema';
 import { CreateAttributeDto, QuickCreateAttributeDto, UpdateAttributeDto } from './dtos';
 
 @Injectable()
-export class AttributesService {
+export class AttributesService implements OnModuleInit {
   constructor(
     @InjectModel(Attribute.name) private attributeModel: Model<AttributeDocument>,
   ) {}
+
+  async onModuleInit() {
+    // Purge legacy soft-deleted documents from database
+    await this.attributeModel.deleteMany({ deleted: true }).catch(() => {});
+  }
 
   async create(createDto: CreateAttributeDto): Promise<AttributeDocument> {
     const key = createDto.key.toLowerCase().trim().replace(/[\s-]+/g, '_');
@@ -114,8 +119,7 @@ export class AttributesService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const attribute = await this.findById(id);
-    attribute.deleted = true;
-    await attribute.save();
+    await this.attributeModel.deleteOne({ _id: attribute._id });
     return { success: true, message: 'ویژگی با موفقیت حذف شد.' };
   }
 
@@ -123,10 +127,9 @@ export class AttributesService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.attributeModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.attributeModel.deleteMany({
+      _id: { $in: validIds },
+    });
+    return { success: true, modifiedCount: result.deletedCount || 0 };
   }
 }

@@ -1,14 +1,19 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Brand, BrandDocument } from './schemas/brand.schema';
 import { CreateBrandDto, UpdateBrandDto } from './dtos';
 
 @Injectable()
-export class BrandsService {
+export class BrandsService implements OnModuleInit {
   constructor(
     @InjectModel(Brand.name) private brandModel: Model<BrandDocument>,
   ) {}
+
+  async onModuleInit() {
+    // Purge legacy soft-deleted documents from database
+    await this.brandModel.deleteMany({ deleted: true }).catch(() => {});
+  }
 
   async create(createBrandDto: CreateBrandDto): Promise<BrandDocument> {
     const existing = await this.brandModel.findOne({
@@ -90,8 +95,7 @@ export class BrandsService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const brand = await this.findById(id);
-    brand.deleted = true;
-    await brand.save();
+    await this.brandModel.deleteOne({ _id: brand._id });
     return { success: true, message: 'برند با موفقیت حذف گردید.' };
   }
 
@@ -113,10 +117,9 @@ export class BrandsService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.brandModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.brandModel.deleteMany({
+      _id: { $in: validIds },
+    });
+    return { success: true, modifiedCount: result.deletedCount || 0 };
   }
 }

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -13,13 +14,18 @@ import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { OrderStatus, PaymentMethod } from '../common/enums';
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleInit {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     private couponsService: CouponsService,
     private usersService: UsersService,
   ) {}
+
+  async onModuleInit() {
+    // Purge legacy soft-deleted documents from database
+    await this.orderModel.deleteMany({ deleted: true }).catch(() => {});
+  }
 
   async create(userId: string, createOrderDto: CreateOrderDto): Promise<OrderDocument> {
     if (!createOrderDto.items || createOrderDto.items.length === 0) {
@@ -242,15 +248,20 @@ export class OrdersService {
     return { success: true, modifiedCount: result.modifiedCount };
   }
 
+  async deleteOne(id: string): Promise<{ success: boolean; message: string }> {
+    const order = await this.findById(id);
+    await this.orderModel.deleteOne({ _id: order._id });
+    return { success: true, message: 'سفارش با موفقیت حذف شد.' };
+  }
+
   async bulkSoftDelete(ids: string[]): Promise<{ success: boolean; modifiedCount: number }> {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.orderModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.orderModel.deleteMany({
+      _id: { $in: validIds },
+    });
+    return { success: true, modifiedCount: result.deletedCount || 0 };
   }
 
   async getDashboardStats() {
