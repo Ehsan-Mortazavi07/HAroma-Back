@@ -323,9 +323,13 @@ export class AuthService {
     if (recentOtp) {
       const elapsedSeconds = Math.floor((Date.now() - recentOtp.createdAt.getTime()) / 1000);
       const waitSeconds = Math.max(1, 120 - elapsedSeconds);
-      throw new BadRequestException(
-        `کد تایید هنوز معتبر است. لطفاً ${waitSeconds} ثانیه دیگر جهت درخواست مجدد کد صبر کنید.`,
-      );
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'RATE_LIMIT',
+        message: `کد تایید هنوز معتبر است. لطفاً ${waitSeconds} ثانیه دیگر جهت درخواست مجدد کد صبر کنید.`,
+        retryAfter: waitSeconds,
+        devCode: recentOtp.code,
+      });
     }
 
     // Invalidate prior unused OTPs for this target & purpose
