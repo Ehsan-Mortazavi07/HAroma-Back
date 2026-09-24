@@ -25,37 +25,89 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async validateUser(identifier: string, pass: string): Promise<any> {
-    const user = await this.usersService.findByUsernameOrEmail(identifier);
-    if (!user) {
-      return null;
-    }
-    const isMatch = await bcrypt.compare(pass, user.password);
-    if (isMatch) {
-      const userObj = user.toObject();
-      delete (userObj as any).password;
-      return userObj;
-    }
-    return null;
-  }
-
   async login(loginDto: LoginDto) {
-    const user = await this.validateUser(loginDto.identifier, loginDto.password);
-    if (!user) {
-      throw new UnauthorizedException('نام کاربری/ایمیل یا رمز عبور اشتباه است.');
+    const rawId = (loginDto.identifier || '').trim();
+    if (!rawId) {
+      throw new BadRequestException('نام کاربری، شماره موبایل یا ایمیل الزامی است.');
     }
+
+    // Convert Persian & Arabic digits to English
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    let convertedId = rawId;
+    for (let i = 0; i < 10; i++) {
+      convertedId = convertedId.replace(new RegExp(persianDigits[i], 'g'), i.toString());
+      convertedId = convertedId.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
+    }
+    const strippedId = convertedId.replace(/\s|-/g, '');
+
+    // Requirement 1: Check mobile number format if user entered phone-like identifier
+    const isPhoneLike =
+      /^(\+98|0098|98|09)/.test(strippedId) ||
+      (/^\d+$/.test(strippedId) && strippedId.length >= 7);
+
+    let searchPhone: string | null = null;
+    if (isPhoneLike) {
+      try {
+        searchPhone = normalizePhoneNumber(rawId);
+      } catch (err: any) {
+        throw new BadRequestException(
+          'فرمت شماره موبایل نامعتبر است. شماره موبایل باید ۱۱ رقم بوده و با ۰۹ شروع شود (مثال: ۰۹۱۲۳۴۵۶۷۸۹).',
+        );
+      }
+    }
+
+    const cleanId = convertedId.trim().toLowerCase();
+    const isEmailLike = cleanId.includes('@');
+
+    let user: UserDocument | null = null;
+    if (searchPhone) {
+      user = await this.usersService.findByPhone(searchPhone);
+    } else if (isEmailLike) {
+      user = await this.userModel.findOne({ email: cleanId, deleted: false }).exec();
+    } else {
+      user = await this.usersService.findByUsernameOrEmail(cleanId);
+    }
+
+    // Requirement 4: If user doesn't exist
+    if (!user) {
+      throw new UnauthorizedException('کاربری با این مشخصات وجود ندارد.');
+    }
+
+    // Requirement 2: Login with email requires isEmailVerified
+    if (isEmailLike && !user.isEmailVerified) {
+      throw new UnauthorizedException(
+        'ورود با ایمیل امکان‌پذیر نیست زیرا ایمیل این حساب کاربری هنوز تایید نشده است. لطفاً با نام کاربری یا شماره موبایل وارد شوید.',
+      );
+    }
+
+    if (!user.password) {
+      throw new UnauthorizedException(
+        'برای این حساب کاربری رمز عبور ثبت نشده است. لطفاً با کد یکبار مصرف وارد شوید.',
+      );
+    }
+
+    // Requirement 4: If user exists but password is wrong
+    const isMatch = await bcrypt.compare(loginDto.password, user.password);
+    if (!isMatch) {
+      throw new UnauthorizedException('رمز عبور اشتباه است.');
+    }
+
+    const userObj = user.toObject();
+    delete (userObj as any).password;
 
     const payload = {
-      sub: user._id,
-      username: user.username,
-      email: user.email || '',
-      role: user.role,
-      isVip: user.isVip,
+      sub: userObj._id,
+      username: userObj.username,
+      email: userObj.email || '',
+      phone: userObj.phone || '',
+      role: userObj.role,
+      isVip: userObj.isVip,
     };
 
     return {
       accessToken: this.jwtService.sign(payload),
-      user,
+      user: userObj,
     };
   }
 
@@ -65,11 +117,16 @@ export class AuthService {
     }
 
     const cleanEmail = registerDto.email?.trim() ? registerDto.email.trim().toLowerCase() : undefined;
+    let cleanPhone: string | undefined = undefined;
+    if (registerDto.phone?.trim()) {
+      cleanPhone = normalizePhoneNumber(registerDto.phone);
+    }
 
     const createdUser = await this.usersService.create({
       fullName: registerDto.fullName,
       username: registerDto.username,
       email: cleanEmail,
+      phone: cleanPhone,
       password: registerDto.password,
       birthDate: registerDto.birthDate,
     });
@@ -81,6 +138,7 @@ export class AuthService {
       sub: userObj._id,
       username: userObj.username,
       email: userObj.email || '',
+      phone: userObj.phone || '',
       role: userObj.role,
       isVip: userObj.isVip,
     };
@@ -132,8 +190,18 @@ export class AuthService {
     };
   }
 
-  async sendOtp(phone: string) {
+  async sendOtp(phone: string, purpose: 'login' | 'verify-phone' = 'login') {
     const cleanPhone = normalizePhoneNumber(phone);
+
+    // Requirement 3: When logging in, verify that the phone exists in the database first!
+    if (purpose === 'login') {
+      const existingUser = await this.usersService.findByPhone(cleanPhone);
+      if (!existingUser) {
+        throw new NotFoundException(
+          'حساب کاربری با این شماره موبایل یافت نشد. لطفاً ابتدا در سایت ثبت‌نام کنید.',
+        );
+      }
+    }
 
     // Rate-limit: 60 seconds anti-flood
     const recentOtp = await this.otpModel
@@ -228,38 +296,17 @@ export class AuthService {
     otpRecord.used = true;
     await otpRecord.save();
 
-    // Check if user exists
-    let user = await this.usersService.findByPhone(cleanPhone);
-    let isNewUser = false;
-
+    // Requirement 3: Only allow login if account exists - NO auto-creating account!
+    const user = await this.usersService.findByPhone(cleanPhone);
     if (!user) {
-      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-      let candidateUsername = `user_${cleanPhone.slice(-4)}_${randomSuffix}`;
-      let exists = await this.userModel.findOne({ username: candidateUsername });
-      while (exists) {
-        candidateUsername = `user_${cleanPhone.slice(-4)}_${Math.floor(1000 + Math.random() * 9000)}`;
-        exists = await this.userModel.findOne({ username: candidateUsername });
-      }
+      throw new NotFoundException(
+        'حساب کاربری با این شماره موبایل یافت نشد. لطفاً ابتدا در سایت ثبت‌نام کنید.',
+      );
+    }
 
-      // Auto generate secure password
-      const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
-      const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
-      user = await this.userModel.create({
-        fullName: `کاربر ${cleanPhone.slice(-4)}`,
-        username: candidateUsername,
-        phone: cleanPhone,
-        isPhoneVerified: true,
-        password: hashedPassword,
-        role: UserRole.USER,
-        isVip: false,
-      });
-      isNewUser = true;
-    } else {
-      if (!user.isPhoneVerified) {
-        user.isPhoneVerified = true;
-        await user.save();
-      }
+    if (!user.isPhoneVerified) {
+      user.isPhoneVerified = true;
+      await user.save();
     }
 
     const userObj = user.toObject();
@@ -276,10 +323,9 @@ export class AuthService {
 
     return {
       success: true,
-      message: isNewUser ? 'حساب کاربری جدید ایجاد و ورود با موفقیت انجام شد.' : 'ورود با موفقیت انجام شد.',
+      message: 'ورود با موفقیت انجام شد.',
       accessToken: this.jwtService.sign(payload),
       user: userObj,
-      isNewUser,
     };
   }
 

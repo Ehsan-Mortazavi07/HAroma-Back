@@ -48,7 +48,7 @@ export class AuthController {
   @Post('otp/send')
   @HttpCode(HttpStatus.OK)
   async sendOtp(@Body() dto: SendOtpDto) {
-    return this.authService.sendOtp(dto.phone);
+    return this.authService.sendOtp(dto.phone, dto.purpose);
   }
 
   @Post('otp/verify')

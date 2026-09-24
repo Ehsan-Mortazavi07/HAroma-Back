@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto, UpdateUserDto } from './dtos';
 import { UserRole } from '../common/enums';
+import { normalizePhoneNumber } from '../auth/utils/phone.util';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -33,6 +34,14 @@ export class UsersService implements OnModuleInit {
       if (emailIndex && !emailIndex.partialFilterExpression) {
         await this.userModel.collection.dropIndex('email_1');
       }
+    } catch {}
+
+    // 4. Ensure admin and editor accounts have isEmailVerified & isPhoneVerified true
+    try {
+      await this.userModel.updateMany(
+        { role: { $in: [UserRole.ADMIN, UserRole.EDITOR] } },
+        { $set: { isEmailVerified: true, isPhoneVerified: true } },
+      );
     } catch {}
   }
 
@@ -124,13 +133,22 @@ export class UsersService implements OnModuleInit {
 
   async findByUsernameOrEmail(identifier: string): Promise<UserDocument | null> {
     const cleanId = identifier.trim().toLowerCase();
+    const orConditions: any[] = [
+      { username: cleanId },
+      { email: cleanId },
+      { phone: cleanId },
+    ];
+
+    try {
+      const normalized = normalizePhoneNumber(identifier);
+      if (normalized && normalized !== cleanId) {
+        orConditions.push({ phone: normalized });
+      }
+    } catch {}
+
     return this.userModel
       .findOne({
-        $or: [
-          { username: cleanId },
-          { email: cleanId },
-          { phone: cleanId },
-        ],
+        $or: orConditions,
         deleted: false,
       })
       .exec();

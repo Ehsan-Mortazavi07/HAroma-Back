@@ -71,6 +71,8 @@ export class SeedService implements OnApplicationBootstrap {
       admin.username = 'admin';
       admin.email = 'admin@hatefaroma.com';
       admin.phone = '09120000001';
+      admin.isEmailVerified = true;
+      admin.isPhoneVerified = true;
       admin.password = adminPassword;
       admin.role = UserRole.ADMIN;
       admin.isVip = true;
@@ -83,6 +85,8 @@ export class SeedService implements OnApplicationBootstrap {
         username: 'admin',
         email: 'admin@hatefaroma.com',
         phone: '09120000001',
+        isEmailVerified: true,
+        isPhoneVerified: true,
         password: adminPassword,
         role: UserRole.ADMIN,
         isVip: true,
@@ -106,6 +110,8 @@ export class SeedService implements OnApplicationBootstrap {
       editor.username = 'editor';
       editor.email = 'editor@hatefaroma.com';
       editor.phone = '09120000002';
+      editor.isEmailVerified = true;
+      editor.isPhoneVerified = true;
       editor.password = editorPassword;
       editor.role = UserRole.EDITOR;
       editor.deleted = false;
@@ -117,6 +123,8 @@ export class SeedService implements OnApplicationBootstrap {
         username: 'editor',
         email: 'editor@hatefaroma.com',
         phone: '09120000002',
+        isEmailVerified: true,
+        isPhoneVerified: true,
         password: editorPassword,
         role: UserRole.EDITOR,
         isVip: false,

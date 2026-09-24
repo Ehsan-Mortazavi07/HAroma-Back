@@ -23,6 +23,10 @@ export class RegisterDto {
   @IsString()
   email?: string;
 
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
   @IsNotEmpty({ message: 'رمز عبور الزامی است.' })
   @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })
   password!: string;
@@ -59,6 +63,10 @@ export class SendOtpDto {
   @IsNotEmpty({ message: 'شماره موبایل الزامی است.' })
   @IsString({ message: 'شماره موبایل باید معتبر باشد.' })
   phone!: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: 'login' | 'verify-phone';
 }
 
 export class VerifyOtpDto {
