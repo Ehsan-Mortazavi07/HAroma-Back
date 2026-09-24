@@ -182,6 +182,17 @@ export class AuthService {
     }
 
     if (!otpRecord) {
+      // Fallback check 2: any OTP verified within the last 30 minutes for this phone
+      otpRecord = await this.otpModel
+        .findOne({
+          phone: cleanPhone,
+          isVerified: true,
+          updatedAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) },
+        })
+        .sort({ updatedAt: -1 });
+    }
+
+    if (!otpRecord) {
       throw new BadRequestException('کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.');
     }
 
@@ -195,10 +206,6 @@ export class AuthService {
       await otpRecord.save();
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
-
-    // Mark OTP code as used so it cannot be re-used
-    otpRecord.used = true;
-    await otpRecord.save();
 
     // Check optional password
     const rawPassword = registerDto.password?.trim() || '';
@@ -240,6 +247,10 @@ export class AuthService {
       birthDate: registerDto.birthDate,
       isPhoneVerified: true,
     } as any);
+
+    // Mark OTP code as used ONLY after user creation is successful!
+    otpRecord.used = true;
+    await otpRecord.save();
 
     const userObj = createdUser.toObject();
     delete (userObj as any).password;
