@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { User, UserDocument } from './schemas/user.schema';
-import { CreateUserDto, UpdateUserDto } from './dtos';
+import { CreateUserDto, UpdateUserDto, CreateAddressDto, UpdateAddressDto } from './dtos';
 import { UserRole } from '../common/enums';
 import { normalizePhoneNumber } from '../auth/utils/phone.util';
 
@@ -381,5 +381,230 @@ export class UsersService implements OnModuleInit {
 
   async countVip() {
     return this.userModel.countDocuments({ isVip: true, deleted: false });
+  }
+
+  // ==========================================
+  // MULTIPLE ADDRESSES MANAGEMENT
+  // ==========================================
+
+  private syncUserTopLevelAddress(user: UserDocument, addr: any) {
+    if (addr) {
+      user.province = (addr.province || '').trim();
+      user.city = (addr.city || '').trim();
+      user.address = (addr.address || '').trim();
+      user.postalCode = (addr.postalCode || '').trim();
+      user.buildingNumber = (addr.buildingNumber || '').trim();
+      user.unit = (addr.unit || '').trim();
+      user.recipientName = (addr.recipientName || '').trim();
+      user.recipientPhone = (addr.recipientPhone || '').trim();
+      user.recipientEmail = (addr.recipientEmail || '').trim();
+      user.addressNotes = (addr.addressNotes || '').trim();
+    } else {
+      user.province = '';
+      user.city = '';
+      user.address = '';
+      user.postalCode = '';
+      user.buildingNumber = '';
+      user.unit = '';
+      user.recipientName = '';
+      user.recipientPhone = '';
+      user.recipientEmail = '';
+      user.addressNotes = '';
+    }
+  }
+
+  async getAddresses(userId: string) {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('کاربر یافت نشد.');
+
+    let addresses = user.addresses || [];
+
+    // Auto-migrate legacy top-level address if addresses array is empty
+    if (addresses.length === 0 && user.address && user.city) {
+      const legacyAddress: any = {
+        _id: new Types.ObjectId().toString(),
+        title: 'نشانی پیش‌فرض',
+        province: user.province || '',
+        city: user.city || '',
+        address: user.address || '',
+        postalCode: user.postalCode || '',
+        buildingNumber: user.buildingNumber || '',
+        unit: user.unit || '',
+        recipientName: user.recipientName || user.fullName || '',
+        recipientPhone: user.recipientPhone || user.phone || '',
+        recipientEmail: user.recipientEmail || user.email || '',
+        addressNotes: user.addressNotes || '',
+        isDefault: true,
+      };
+      user.addresses = [legacyAddress];
+      await user.save();
+      addresses = user.addresses;
+    }
+
+    // Ensure at least one address is default if addresses exist
+    const hasDefault = addresses.some((a) => a.isDefault);
+    if (!hasDefault && addresses.length > 0) {
+      addresses[0].isDefault = true;
+      this.syncUserTopLevelAddress(user, addresses[0]);
+      await user.save();
+    }
+
+    return [...addresses].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
+  }
+
+  async addAddress(userId: string, dto: CreateAddressDto) {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('کاربر یافت نشد.');
+
+    if (!user.addresses) user.addresses = [];
+
+    // Auto-migrate legacy top-level address if addresses array is empty before adding new one
+    if (user.addresses.length === 0 && user.address && user.city) {
+      const legacyAddress: any = {
+        _id: new Types.ObjectId().toString(),
+        title: 'نشانی ۱',
+        province: user.province || '',
+        city: user.city || '',
+        address: user.address || '',
+        postalCode: user.postalCode || '',
+        buildingNumber: user.buildingNumber || '',
+        unit: user.unit || '',
+        recipientName: user.recipientName || user.fullName || '',
+        recipientPhone: user.recipientPhone || user.phone || '',
+        recipientEmail: user.recipientEmail || user.email || '',
+        addressNotes: user.addressNotes || '',
+        isDefault: true,
+      };
+      user.addresses.push(legacyAddress);
+    }
+
+    // If it's the only address or dto asks for default, set it as default
+    const shouldBeDefault = user.addresses.length === 0 || Boolean(dto.isDefault);
+
+    if (shouldBeDefault) {
+      user.addresses.forEach((a) => {
+        a.isDefault = false;
+      });
+    }
+
+    const newAddress: any = {
+      _id: new Types.ObjectId().toString(),
+      title: (dto.title || '').trim() || `نشانی ${user.addresses.length + 1}`,
+      province: (dto.province || '').trim(),
+      city: (dto.city || '').trim(),
+      address: (dto.address || '').trim(),
+      postalCode: (dto.postalCode || '').trim(),
+      buildingNumber: (dto.buildingNumber || '').trim(),
+      unit: (dto.unit || '').trim(),
+      recipientName: (dto.recipientName || '').trim() || user.fullName,
+      recipientPhone: (dto.recipientPhone || '').trim() || user.phone || '',
+      recipientEmail: (dto.recipientEmail || '').trim() || user.email || '',
+      addressNotes: (dto.addressNotes || '').trim(),
+      isDefault: shouldBeDefault,
+    };
+
+    user.addresses.push(newAddress);
+
+    if (shouldBeDefault) {
+      this.syncUserTopLevelAddress(user, newAddress);
+    }
+
+    await user.save();
+
+    return {
+      success: true,
+      message: 'نشانی جدید با موفقیت ثبت شد.',
+      address: newAddress,
+      addresses: [...user.addresses].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)),
+    };
+  }
+
+  async updateAddress(userId: string, addressId: string, dto: UpdateAddressDto) {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('کاربر یافت نشد.');
+
+    const targetAddress = user.addresses?.find((a) => a._id?.toString() === addressId?.toString());
+    if (!targetAddress) throw new NotFoundException('نشانی مورد نظر یافت نشد.');
+
+    if (dto.isDefault) {
+      user.addresses.forEach((a) => {
+        a.isDefault = false;
+      });
+      targetAddress.isDefault = true;
+    }
+
+    if (dto.title !== undefined) targetAddress.title = (dto.title || '').trim();
+    if (dto.province !== undefined) targetAddress.province = (dto.province || '').trim();
+    if (dto.city !== undefined) targetAddress.city = (dto.city || '').trim();
+    if (dto.address !== undefined) targetAddress.address = (dto.address || '').trim();
+    if (dto.postalCode !== undefined) targetAddress.postalCode = (dto.postalCode || '').trim();
+    if (dto.buildingNumber !== undefined) targetAddress.buildingNumber = (dto.buildingNumber || '').trim();
+    if (dto.unit !== undefined) targetAddress.unit = (dto.unit || '').trim();
+    if (dto.recipientName !== undefined) targetAddress.recipientName = (dto.recipientName || '').trim();
+    if (dto.recipientPhone !== undefined) targetAddress.recipientPhone = (dto.recipientPhone || '').trim();
+    if (dto.recipientEmail !== undefined) targetAddress.recipientEmail = (dto.recipientEmail || '').trim();
+    if (dto.addressNotes !== undefined) targetAddress.addressNotes = (dto.addressNotes || '').trim();
+
+    if (targetAddress.isDefault) {
+      this.syncUserTopLevelAddress(user, targetAddress);
+    }
+
+    await user.save();
+
+    return {
+      success: true,
+      message: 'نشانی با موفقیت ویرایش شد.',
+      address: targetAddress,
+      addresses: [...user.addresses].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)),
+    };
+  }
+
+  async deleteAddress(userId: string, addressId: string) {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('کاربر یافت نشد.');
+
+    const index = user.addresses?.findIndex((a) => a._id?.toString() === addressId?.toString());
+    if (index === -1 || index === undefined) throw new NotFoundException('نشانی مورد نظر یافت نشد.');
+
+    const wasDefault = user.addresses[index].isDefault;
+    user.addresses.splice(index, 1);
+
+    if (wasDefault && user.addresses.length > 0) {
+      user.addresses[0].isDefault = true;
+      this.syncUserTopLevelAddress(user, user.addresses[0]);
+    } else if (user.addresses.length === 0) {
+      this.syncUserTopLevelAddress(user, null);
+    }
+
+    await user.save();
+
+    return {
+      success: true,
+      message: 'نشانی با موفقیت حذف شد.',
+      addresses: [...user.addresses].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)),
+    };
+  }
+
+  async setDefaultAddress(userId: string, addressId: string) {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('کاربر یافت نشد.');
+
+    const target = user.addresses?.find((a) => a._id?.toString() === addressId?.toString());
+    if (!target) throw new NotFoundException('نشانی مورد نظر یافت نشد.');
+
+    user.addresses.forEach((a) => {
+      a.isDefault = false;
+    });
+    target.isDefault = true;
+
+    this.syncUserTopLevelAddress(user, target);
+
+    await user.save();
+
+    return {
+      success: true,
+      message: 'نشانی پیش‌فرض با موفقیت تعیین شد.',
+      addresses: [...user.addresses].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0)),
+    };
   }
 }

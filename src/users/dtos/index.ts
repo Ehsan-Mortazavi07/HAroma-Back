@@ -224,3 +224,104 @@ export class UpdateUserVipDto {
   @IsNumber()
   durationDays?: number;
 }
+
+export class CreateAddressDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsNotEmpty({ message: 'انتخاب استان الزامی است.' })
+  @IsString()
+  province!: string;
+
+  @IsNotEmpty({ message: 'انتخاب شهر الزامی است.' })
+  @IsString()
+  city!: string;
+
+  @IsNotEmpty({ message: 'نشانی دقیق پستی الزامی است.' })
+  @IsString()
+  address!: string;
+
+  @IsOptional()
+  @IsString()
+  postalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  buildingNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  recipientName?: string;
+
+  @IsOptional()
+  @IsString()
+  recipientPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  recipientEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  addressNotes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+}
+
+export class UpdateAddressDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  province?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  postalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  buildingNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  recipientName?: string;
+
+  @IsOptional()
+  @IsString()
+  recipientPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  recipientEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  addressNotes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+}
+

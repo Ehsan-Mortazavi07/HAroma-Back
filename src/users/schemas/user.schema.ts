@@ -1,8 +1,52 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { UserRole } from '../../common/enums';
 
 export type UserDocument = User & Document;
+
+@Schema({ timestamps: true })
+export class UserAddress {
+  @Prop({ type: String, default: () => new Types.ObjectId().toString() })
+  _id!: string;
+
+  @Prop({ trim: true, default: '' })
+  title?: string;
+
+  @Prop({ required: true, trim: true })
+  province!: string;
+
+  @Prop({ required: true, trim: true })
+  city!: string;
+
+  @Prop({ required: true, trim: true })
+  address!: string;
+
+  @Prop({ trim: true, default: '' })
+  postalCode?: string;
+
+  @Prop({ trim: true, default: '' })
+  buildingNumber?: string;
+
+  @Prop({ trim: true, default: '' })
+  unit?: string;
+
+  @Prop({ trim: true, default: '' })
+  recipientName?: string;
+
+  @Prop({ trim: true, default: '' })
+  recipientPhone?: string;
+
+  @Prop({ trim: true, default: '' })
+  recipientEmail?: string;
+
+  @Prop({ trim: true, default: '' })
+  addressNotes?: string;
+
+  @Prop({ default: false })
+  isDefault!: boolean;
+}
+
+export const UserAddressSchema = SchemaFactory.createForClass(UserAddress);
 
 @Schema({ timestamps: true })
 export class User {
@@ -77,6 +121,9 @@ export class User {
 
   @Prop({ default: false })
   deleted!: boolean;
+
+  @Prop({ type: [UserAddressSchema], default: [] })
+  addresses!: UserAddress[];
 
   hasPassword?: boolean;
 }
