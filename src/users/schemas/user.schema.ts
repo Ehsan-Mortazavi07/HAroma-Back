@@ -18,8 +18,11 @@ export class User {
   @Prop({ trim: true, default: '' })
   phone?: string;
 
-  @Prop({ required: true })
-  password!: string;
+  @Prop({ default: false })
+  isPhoneVerified!: boolean;
+
+  @Prop({ required: false, default: '' })
+  password?: string;
 
   @Prop({ type: String, enum: UserRole, default: UserRole.USER })
   role!: UserRole;

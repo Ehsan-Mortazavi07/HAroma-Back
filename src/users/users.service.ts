@@ -136,6 +136,11 @@ export class UsersService implements OnModuleInit {
       .exec();
   }
 
+  async findByPhone(phone: string): Promise<UserDocument | null> {
+    const cleanPhone = phone.trim();
+    return this.userModel.findOne({ phone: cleanPhone, deleted: false }).exec();
+  }
+
   async update(id: string, updateUserDto: UpdateUserDto, isAdmin: boolean = false): Promise<UserDocument> {
     const user = await this.userModel.findOne({ _id: id, deleted: false });
     if (!user) {

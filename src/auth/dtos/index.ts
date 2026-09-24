@@ -54,3 +54,19 @@ export class ResetPasswordDto {
   @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })
   newPassword!: string;
 }
+
+export class SendOtpDto {
+  @IsNotEmpty({ message: 'شماره موبایل الزامی است.' })
+  @IsString({ message: 'شماره موبایل باید معتبر باشد.' })
+  phone!: string;
+}
+
+export class VerifyOtpDto {
+  @IsNotEmpty({ message: 'شماره موبایل الزامی است.' })
+  @IsString({ message: 'شماره موبایل باید معتبر باشد.' })
+  phone!: string;
+
+  @IsNotEmpty({ message: 'کد تایید الزامی است.' })
+  @IsString({ message: 'کد تایید باید معتبر باشد.' })
+  code!: string;
+}
