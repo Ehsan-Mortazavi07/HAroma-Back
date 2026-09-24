@@ -126,7 +126,7 @@ export class UsersService implements OnModuleInit {
   }
 
   async findById(id: string): Promise<UserDocument> {
-    const user = await this.userModel.findOne({ _id: id, deleted: false }).select('-password').exec();
+    const user = await this.userModel.findOne({ _id: id, deleted: false }).exec();
     if (!user) {
       throw new NotFoundException('کاربر مورد نظر یافت نشد.');
     }
@@ -250,9 +250,10 @@ export class UsersService implements OnModuleInit {
       user.addressNotes = (updateUserDto.addressNotes || '').trim();
     }
 
-    // 4. Password change: Admin can update without currentPassword, regular users must provide it
+    // 4. Password change: Admin can update without currentPassword, regular users must provide it if they already have a password
     if (updateUserDto.password) {
-      if (!isAdmin) {
+      const hasExistingPassword = Boolean(user.password && user.password.trim());
+      if (!isAdmin && hasExistingPassword) {
         if (!updateUserDto.currentPassword) {
           throw new BadRequestException('برای تغییر رمز عبور، وارد کردن کلمه عبور فعلی الزامی است.');
         }

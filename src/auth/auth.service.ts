@@ -94,6 +94,7 @@ export class AuthService {
     }
 
     const userObj = user.toObject();
+    userObj.hasPassword = Boolean(user.password && user.password.trim());
     delete (userObj as any).password;
 
     const payload = {
@@ -253,6 +254,7 @@ export class AuthService {
     await otpRecord.save();
 
     const userObj = createdUser.toObject();
+    userObj.hasPassword = Boolean(createdUser.password && createdUser.password.trim());
     delete (userObj as any).password;
 
     const payload = {
@@ -461,6 +463,7 @@ export class AuthService {
     }
 
     const userObj = user.toObject();
+    userObj.hasPassword = Boolean(user.password && user.password.trim());
     delete (userObj as any).password;
 
     const payload = {
@@ -544,6 +547,7 @@ export class AuthService {
     await user.save();
 
     const userObj = user.toObject();
+    userObj.hasPassword = Boolean(user.password && user.password.trim());
     delete (userObj as any).password;
 
     return {

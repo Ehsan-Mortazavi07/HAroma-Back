@@ -77,9 +77,30 @@ export class User {
 
   @Prop({ default: false })
   deleted!: boolean;
+
+  hasPassword?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+UserSchema.set('toJSON', {
+  virtuals: true,
+  transform: (doc, ret) => {
+    ret.hasPassword = Boolean(ret.password && ret.password.trim());
+    delete ret.password;
+    return ret;
+  },
+});
+
+UserSchema.set('toObject', {
+  virtuals: true,
+  transform: (doc, ret) => {
+    ret.hasPassword = Boolean(ret.password && ret.password.trim());
+    delete ret.password;
+    return ret;
+  },
+});
+
 UserSchema.index(
   { email: 1 },
   {
