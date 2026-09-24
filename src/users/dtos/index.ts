@@ -34,9 +34,11 @@ export class CreateUserDto {
   @Matches(/^09\d{9}$/, { message: 'شماره موبایل باید ۱۱ رقم بوده و با ۰۹ شروع شود.' })
   phone?: string;
 
-  @IsNotEmpty({ message: 'رمز عبور الزامی است.' })
+  @IsOptional()
+  @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
+  @IsString()
   @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })
-  password!: string;
+  password?: string;
 
   @IsOptional()
   @IsEnum(UserRole)

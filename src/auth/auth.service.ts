@@ -111,25 +111,120 @@ export class AuthService {
     };
   }
 
+  private async generateUniqueUsername(phone: string): Promise<string> {
+    const digits = phone.replace(/\D/g, '');
+    const suffix = digits.length >= 7 ? digits.slice(-7) : digits;
+    const base = `user_${suffix}`;
+    let candidate = base;
+    let counter = 1;
+    while (await this.usersService.findByUsernameOrEmail(candidate)) {
+      candidate = `${base}_${counter}`;
+      counter++;
+    }
+    return candidate;
+  }
+
   async register(registerDto: RegisterDto) {
-    if (registerDto.password !== registerDto.confirmPassword) {
-      throw new BadRequestException('رمز عبور با تکرار آن مطابقت ندارد.');
+    if (!registerDto.fullName || !registerDto.fullName.trim()) {
+      throw new BadRequestException('نام و نام خانوادگی الزامی است.');
     }
 
+    if (!registerDto.phone || !registerDto.phone.trim()) {
+      throw new BadRequestException('وارد کردن شماره موبایل الزامی است.');
+    }
+
+    const cleanPhone = normalizePhoneNumber(registerDto.phone);
+
+    // Ensure phone is not already registered
+    const existingPhone = await this.usersService.findByPhone(cleanPhone);
+    if (existingPhone) {
+      throw new ConflictException(
+        'حساب کاربری با این شماره موبایل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.',
+      );
+    }
+
+    // Verify OTP code
+    const rawCode = (registerDto.code || '').trim();
+    if (!rawCode) {
+      throw new BadRequestException('کد تایید ۵ رقمی الزامی است.');
+    }
+
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    let cleanCode = rawCode;
+    for (let i = 0; i < 10; i++) {
+      cleanCode = cleanCode.replace(new RegExp(persianDigits[i], 'g'), i.toString());
+      cleanCode = cleanCode.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
+    }
+
+    const otpRecord = await this.otpModel
+      .findOne({
+        phone: cleanPhone,
+        used: false,
+        expiresAt: { $gt: new Date() },
+      })
+      .sort({ createdAt: -1 });
+
+    if (!otpRecord) {
+      throw new BadRequestException('کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.');
+    }
+
+    if (otpRecord.attempts >= 5) {
+      otpRecord.used = true;
+      await otpRecord.save();
+      throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
+    }
+
+    if (otpRecord.code !== cleanCode) {
+      otpRecord.attempts += 1;
+      await otpRecord.save();
+      throw new BadRequestException('کد تایید وارد شده نادرست است.');
+    }
+
+    // Mark OTP code as used
+    otpRecord.used = true;
+    await otpRecord.save();
+
+    // Check optional password
+    const rawPassword = registerDto.password?.trim() || '';
+    if (rawPassword) {
+      if (rawPassword.length < 6) {
+        throw new BadRequestException('رمز عبور باید حداقل ۶ کاراکتر باشد.');
+      }
+      if (registerDto.confirmPassword && rawPassword !== registerDto.confirmPassword.trim()) {
+        throw new BadRequestException('رمز عبور با تکرار آن مطابقت ندارد.');
+      }
+    }
+
+    // Determine username (optional)
+    let username = registerDto.username?.trim().toLowerCase();
+    if (!username) {
+      username = await this.generateUniqueUsername(cleanPhone);
+    } else {
+      const existingUser = await this.usersService.findByUsernameOrEmail(username);
+      if (existingUser) {
+        throw new ConflictException('این نام کاربری قبلاً توسط کاربر دیگری ثبت شده است.');
+      }
+    }
+
+    // Check optional email
     const cleanEmail = registerDto.email?.trim() ? registerDto.email.trim().toLowerCase() : undefined;
-    let cleanPhone: string | undefined = undefined;
-    if (registerDto.phone?.trim()) {
-      cleanPhone = normalizePhoneNumber(registerDto.phone);
+    if (cleanEmail) {
+      const existingEmail = await this.userModel.findOne({ email: cleanEmail, deleted: false }).exec();
+      if (existingEmail) {
+        throw new ConflictException('این آدرس ایمیل قبلاً توسط کاربر دیگری ثبت شده است.');
+      }
     }
 
     const createdUser = await this.usersService.create({
-      fullName: registerDto.fullName,
-      username: registerDto.username,
+      fullName: registerDto.fullName.trim(),
+      username,
       email: cleanEmail,
       phone: cleanPhone,
-      password: registerDto.password,
+      password: rawPassword || undefined,
       birthDate: registerDto.birthDate,
-    });
+      isPhoneVerified: true,
+    } as any);
 
     const userObj = createdUser.toObject();
     delete (userObj as any).password;
@@ -138,12 +233,14 @@ export class AuthService {
       sub: userObj._id,
       username: userObj.username,
       email: userObj.email || '',
-      phone: userObj.phone || '',
+      phone: userObj.phone || cleanPhone,
       role: userObj.role,
       isVip: userObj.isVip,
     };
 
     return {
+      success: true,
+      message: 'ثبت‌نام با موفقیت انجام شد.',
       accessToken: this.jwtService.sign(payload),
       user: userObj,
     };
@@ -190,15 +287,22 @@ export class AuthService {
     };
   }
 
-  async sendOtp(phone: string, purpose: 'login' | 'verify-phone' = 'login') {
+  async sendOtp(phone: string, purpose: 'login' | 'register' | 'verify-phone' = 'login') {
     const cleanPhone = normalizePhoneNumber(phone);
 
-    // Requirement 3: When logging in, verify that the phone exists in the database first!
+    // Check account status based on purpose
     if (purpose === 'login') {
       const existingUser = await this.usersService.findByPhone(cleanPhone);
       if (!existingUser) {
         throw new NotFoundException(
           'حساب کاربری با این شماره موبایل یافت نشد. لطفاً ابتدا در سایت ثبت‌نام کنید.',
+        );
+      }
+    } else if (purpose === 'register') {
+      const existingUser = await this.usersService.findByPhone(cleanPhone);
+      if (existingUser) {
+        throw new ConflictException(
+          'حساب کاربری با این شماره موبایل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.',
         );
       }
     }
@@ -239,7 +343,7 @@ export class AuthService {
 
     // Console output for development without SMS gateway
     console.log('\n======================================================');
-    console.log(`[HatefAroma OTP Service] 📱 Phone: ${cleanPhone} | 🔑 Code: ${generatedCode}`);
+    console.log(`[HatefAroma OTP Service] 📱 Phone: ${cleanPhone} | 🔑 Code: ${generatedCode} (purpose: ${purpose})`);
     console.log(`[HatefAroma OTP Service] ⏰ Expires in 120 seconds`);
     console.log('======================================================\n');
 
@@ -252,7 +356,7 @@ export class AuthService {
     };
   }
 
-  async verifyOtp(phone: string, code: string) {
+  async verifyOtp(phone: string, code: string, purpose: 'login' | 'register' | 'verify-phone' = 'login') {
     const cleanPhone = normalizePhoneNumber(phone);
 
     // Convert Persian/Arabic digits to English
@@ -290,6 +394,21 @@ export class AuthService {
       otpRecord.attempts += 1;
       await otpRecord.save();
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
+    }
+
+    // If purpose is register: Just confirm code is valid without burning it
+    if (purpose === 'register') {
+      const existingUser = await this.usersService.findByPhone(cleanPhone);
+      if (existingUser) {
+        throw new ConflictException(
+          'حساب کاربری با این شماره موبایل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.',
+        );
+      }
+      return {
+        success: true,
+        verified: true,
+        message: 'کد تایید با موفقیت تایید شد.',
+      };
     }
 
     // Mark as used

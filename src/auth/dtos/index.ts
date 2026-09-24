@@ -15,24 +15,29 @@ export class RegisterDto {
   @IsString()
   fullName!: string;
 
-  @IsNotEmpty({ message: 'نام کاربری الزامی است.' })
+  @IsOptional()
   @IsString()
-  username!: string;
+  username?: string;
 
   @IsOptional()
   @IsString()
   email?: string;
 
+  @IsNotEmpty({ message: 'شماره موبایل الزامی است.' })
+  @IsString()
+  phone!: string;
+
+  @IsNotEmpty({ message: 'کد تایید ۵ رقمی الزامی است.' })
+  @IsString()
+  code!: string;
+
   @IsOptional()
   @IsString()
-  phone?: string;
+  password?: string;
 
-  @IsNotEmpty({ message: 'رمز عبور الزامی است.' })
-  @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })
-  password!: string;
-
-  @IsNotEmpty({ message: 'تکرار رمز عبور الزامی است.' })
-  confirmPassword!: string;
+  @IsOptional()
+  @IsString()
+  confirmPassword?: string;
 
   @IsOptional()
   @IsString()
@@ -66,7 +71,7 @@ export class SendOtpDto {
 
   @IsOptional()
   @IsString()
-  purpose?: 'login' | 'verify-phone';
+  purpose?: 'login' | 'register' | 'verify-phone';
 }
 
 export class VerifyOtpDto {
@@ -77,4 +82,9 @@ export class VerifyOtpDto {
   @IsNotEmpty({ message: 'کد تایید الزامی است.' })
   @IsString({ message: 'کد تایید باید معتبر باشد.' })
   code!: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: 'login' | 'register' | 'verify-phone';
 }
+

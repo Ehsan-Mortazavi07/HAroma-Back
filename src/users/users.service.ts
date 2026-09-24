@@ -75,7 +75,9 @@ export class UsersService implements OnModuleInit {
       throw new ConflictException('کاربری با این مشخصات از قبل وجود دارد.');
     }
 
-    const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+    const hashedPassword = createUserDto.password?.trim()
+      ? await bcrypt.hash(createUserDto.password.trim(), 10)
+      : '';
     const user = new this.userModel({
       ...createUserDto,
       email: cleanEmail,
