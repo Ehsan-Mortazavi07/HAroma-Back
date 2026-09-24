@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import {
@@ -35,14 +36,16 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(dto.identifier, dto.channel);
+  async forgotPassword(@Req() req: any, @Body() dto: ForgotPasswordDto) {
+    const authHeader = req?.headers?.authorization;
+    return this.authService.forgotPassword(dto.identifier, dto.channel, authHeader);
   }
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto.identifier, dto.code, dto.newPassword, dto.confirmPassword);
+  async resetPassword(@Req() req: any, @Body() dto: ResetPasswordDto) {
+    const authHeader = req?.headers?.authorization;
+    return this.authService.resetPassword(dto.identifier, dto.code, dto.newPassword, dto.confirmPassword, dto.channel, authHeader);
   }
 
   @Post('otp/send')

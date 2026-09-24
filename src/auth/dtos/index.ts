@@ -45,9 +45,9 @@ export class RegisterDto {
 }
 
 export class ForgotPasswordDto {
-  @IsNotEmpty({ message: 'نام کاربری، شماره موبایل یا ایمیل الزامی است.' })
+  @IsOptional()
   @IsString()
-  identifier!: string;
+  identifier?: string;
 
   @IsOptional()
   @IsString()
@@ -55,9 +55,9 @@ export class ForgotPasswordDto {
 }
 
 export class ResetPasswordDto {
-  @IsNotEmpty({ message: 'نام کاربری، شماره موبایل یا ایمیل الزامی است.' })
+  @IsOptional()
   @IsString()
-  identifier!: string;
+  identifier?: string;
 
   @IsNotEmpty({ message: 'کد تایید الزامی است.' })
   @IsString()
@@ -70,6 +70,10 @@ export class ResetPasswordDto {
   @IsOptional()
   @IsString()
   confirmPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  channel?: 'sms' | 'email';
 }
 
 export class SendOtpDto {

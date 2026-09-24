@@ -274,15 +274,35 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(identifier: string, channel: 'sms' | 'email' = 'sms') {
-    const cleanId = (identifier || '').trim();
-    if (!cleanId) {
-      throw new BadRequestException('نام کاربری، شماره موبایل یا ایمیل الزامی است.');
+  async forgotPassword(identifier?: string, channel: 'sms' | 'email' = 'sms', authHeader?: string) {
+    let user: UserDocument | null = null;
+
+    // 1. If authorization header is present, lock strictly to the logged-in user
+    if (authHeader) {
+      try {
+        const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+        if (token) {
+          const payload: any = this.jwtService.verify(token);
+          const userId = payload.sub || payload.id || payload._id;
+          if (userId) {
+            user = await this.userModel.findOne({ _id: userId, deleted: { $ne: true } }).exec();
+          }
+        }
+      } catch (err) {
+        // Fall back to identifier if token is invalid or expired
+      }
     }
 
-    const user = await this.usersService.findByUsernameOrEmail(cleanId);
+    // 2. If not authenticated, find by identifier
     if (!user) {
-      throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
+      const cleanId = (identifier || '').trim();
+      if (!cleanId) {
+        throw new BadRequestException('نام کاربری، شماره موبایل یا ایمیل الزامی است.');
+      }
+      user = await this.usersService.findByUsernameOrEmail(cleanId);
+      if (!user) {
+        throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
+      }
     }
 
     const selectedChannel = channel === 'email' ? 'email' : 'sms';
@@ -303,10 +323,10 @@ export class AuthService {
       maskedDestination = targetDestination.replace(/(\d{4})(\d+)(\d{4})/, (m, p1, p2, p3) => `${p1}***${p3}`);
     }
 
-    // Rate-limit & 2-minute expiration check (120 seconds)
-    // Check if an active, unexpired OTP already exists
+    // Rate-limit & 2-minute expiration check (120 seconds) strictly per channel
     const queryFilter: any = {
       used: false,
+      channel: selectedChannel,
       purpose: 'reset-password',
       expiresAt: { $gt: new Date() },
     };
@@ -326,15 +346,17 @@ export class AuthService {
       throw new BadRequestException({
         statusCode: 400,
         error: 'RATE_LIMIT',
-        message: `کد تایید هنوز معتبر است. لطفاً ${waitSeconds} ثانیه دیگر جهت درخواست مجدد کد صبر کنید.`,
+        message: `کد تایید ${selectedChannel === 'sms' ? 'پیامک' : 'ایمیل'} هنوز معتبر است. لطفاً ${waitSeconds} ثانیه دیگر جهت درخواست مجدد صبر کنید.`,
         retryAfter: waitSeconds,
+        channel: selectedChannel,
         devCode: recentOtp.code,
       });
     }
 
-    // Invalidate prior unused OTPs for this target & purpose
+    // Invalidate prior unused OTPs ONLY for this channel & target
     const invalidateFilter: any = {
       used: false,
+      channel: selectedChannel,
       purpose: 'reset-password',
     };
     if (selectedChannel === 'email') {
@@ -344,13 +366,13 @@ export class AuthService {
     }
     await this.otpModel.updateMany(invalidateFilter, { $set: { used: true } });
 
-    // Generate random 5-digit code
+    // Generate random 5-digit code unique to this channel
     const generatedCode = Math.floor(10000 + Math.random() * 90000).toString();
     const expiresAt = new Date(Date.now() + 120 * 1000); // Exactly 2 minutes (120 seconds)
 
     await this.otpModel.create({
-      phone: selectedChannel === 'sms' ? targetDestination : (user.phone || undefined),
-      email: selectedChannel === 'email' ? targetDestination : (user.email ? user.email.toLowerCase() : undefined),
+      phone: selectedChannel === 'sms' ? targetDestination : undefined,
+      email: selectedChannel === 'email' ? targetDestination : undefined,
       channel: selectedChannel,
       purpose: 'reset-password',
       code: generatedCode,
@@ -377,10 +399,40 @@ export class AuthService {
     };
   }
 
-  async resetPassword(identifier: string, code: string, newPassword: string, confirmPassword?: string) {
-    const cleanId = (identifier || '').trim();
-    if (!cleanId) {
-      throw new BadRequestException('نام کاربری، شماره موبایل یا ایمیل الزامی است.');
+  async resetPassword(
+    identifier?: string,
+    code?: string,
+    newPassword?: string,
+    confirmPassword?: string,
+    channel?: 'sms' | 'email',
+    authHeader?: string,
+  ) {
+    let user: UserDocument | null = null;
+
+    // 1. If authorization header is present, lock strictly to the logged-in user
+    if (authHeader) {
+      try {
+        const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+        if (token) {
+          const payload: any = this.jwtService.verify(token);
+          const userId = payload.sub || payload.id || payload._id;
+          if (userId) {
+            user = await this.userModel.findOne({ _id: userId, deleted: { $ne: true } }).exec();
+          }
+        }
+      } catch (err) {}
+    }
+
+    // 2. If not authenticated, find by identifier
+    if (!user) {
+      const cleanId = (identifier || '').trim();
+      if (!cleanId) {
+        throw new BadRequestException('نام کاربری، شماره موبایل یا ایمیل الزامی است.');
+      }
+      user = await this.usersService.findByUsernameOrEmail(cleanId);
+      if (!user) {
+        throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
+      }
     }
 
     if (confirmPassword && newPassword !== confirmPassword) {
@@ -389,11 +441,6 @@ export class AuthService {
 
     if (!newPassword || newPassword.length < 6) {
       throw new BadRequestException('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
-    }
-
-    const user = await this.usersService.findByUsernameOrEmail(cleanId);
-    if (!user) {
-      throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
     }
 
     // Convert Persian/Arabic digits to English digits
@@ -409,23 +456,41 @@ export class AuthService {
       throw new BadRequestException('کد تایید وارد شده نامعتبر است.');
     }
 
-    // Match OTP by purpose and user's phone or email
+    // Match OTP by purpose and channel if specified, or by user's phone or email
     const matchConditions: any[] = [];
-    if (user.phone) matchConditions.push({ phone: user.phone });
-    if (user.email) matchConditions.push({ email: user.email.toLowerCase() });
+    if (user.phone && (!channel || channel === 'sms')) {
+      matchConditions.push({ phone: normalizePhoneNumber(user.phone), channel: 'sms' });
+    }
+    if (user.email && (!channel || channel === 'email')) {
+      matchConditions.push({ email: user.email.trim().toLowerCase(), channel: 'email' });
+    }
 
     if (matchConditions.length === 0) {
       throw new BadRequestException('اطلاعات تماس معتبری برای این کاربر یافت نشد.');
     }
 
-    const otpRecord = await this.otpModel
+    // Try finding by exact code first
+    let otpRecord = await this.otpModel
       .findOne({
         used: false,
         purpose: 'reset-password',
         expiresAt: { $gt: new Date() },
+        code: cleanCode,
         $or: matchConditions,
       })
       .sort({ createdAt: -1 });
+
+    // If not found by code, look for any active OTP to increment attempts
+    if (!otpRecord) {
+      otpRecord = await this.otpModel
+        .findOne({
+          used: false,
+          purpose: 'reset-password',
+          expiresAt: { $gt: new Date() },
+          $or: matchConditions,
+        })
+        .sort({ createdAt: -1 });
+    }
 
     if (!otpRecord) {
       throw new BadRequestException(
@@ -449,8 +514,22 @@ export class AuthService {
     otpRecord.used = true;
     await otpRecord.save();
 
+    // Invalidate all other active reset-password OTPs for this user across both channels
+    await this.otpModel.updateMany(
+      {
+        used: false,
+        purpose: 'reset-password',
+        $or: [
+          ...(user.phone ? [{ phone: normalizePhoneNumber(user.phone) }] : []),
+          ...(user.email ? [{ email: user.email.trim().toLowerCase() }] : []),
+        ],
+      },
+      { $set: { used: true } },
+    );
+
     // Hash and update password
     user.password = await bcrypt.hash(newPassword, 10);
+    user.hasPassword = true;
     await user.save();
 
     return {
