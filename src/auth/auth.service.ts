@@ -486,20 +486,24 @@ export class AuthService {
       }
     }
 
-    // Rate-limit: 60 seconds anti-flood
+    // Rate-limit: 120 seconds (2 minutes) anti-flood
     const recentOtp = await this.otpModel
       .findOne({
         phone: cleanPhone,
-        createdAt: { $gte: new Date(Date.now() - 60 * 1000) },
+        createdAt: { $gte: new Date(Date.now() - 120 * 1000) },
       })
       .sort({ createdAt: -1 });
 
     if (recentOtp) {
       const elapsedSeconds = Math.floor((Date.now() - recentOtp.createdAt.getTime()) / 1000);
-      const waitSeconds = Math.max(1, 60 - elapsedSeconds);
-      throw new BadRequestException(
-        `لطفاً قبل از ارسال مجدد کد، ${waitSeconds} ثانیه صبر کنید.`,
-      );
+      const waitSeconds = Math.max(1, 120 - elapsedSeconds);
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'RATE_LIMIT',
+        message: `لطفاً قبل از ارسال مجدد کد، ${waitSeconds} ثانیه صبر کنید.`,
+        retryAfter: waitSeconds,
+        devCode: recentOtp.code,
+      });
     }
 
     // Invalidate prior unused OTPs for this phone

@@ -17,6 +17,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let message = 'خطای غیرمنتظره در سرور رخ داده است.';
     let errors: any = null;
 
+    let extraFields: Record<string, any> = {};
+
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
@@ -25,6 +27,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else if (typeof res === 'object' && res !== null) {
         message = (res as any).message || message;
         errors = (res as any).errors || null;
+        const { message: _m, errors: _e, statusCode: _s, ...rest } = res as any;
+        extraFields = rest;
       }
     } else if (exception instanceof Error) {
       message = exception.message;
@@ -34,6 +38,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       message,
       errors,
+      ...extraFields,
       timestamp: new Date().toISOString(),
     });
   }
