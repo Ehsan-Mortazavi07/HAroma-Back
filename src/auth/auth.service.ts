@@ -157,31 +157,46 @@ export class AuthService {
       cleanCode = cleanCode.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
     }
 
-    const otpRecord = await this.otpModel
+    // Find valid OTP record: verified in Step 2 or matching code
+    let otpRecord = await this.otpModel
       .findOne({
         phone: cleanPhone,
         used: false,
         expiresAt: { $gt: new Date() },
+        $or: [
+          { isVerified: true },
+          { code: cleanCode },
+        ],
       })
       .sort({ createdAt: -1 });
+
+    if (!otpRecord) {
+      // Fallback check: any unexpired unused OTP for this phone
+      otpRecord = await this.otpModel
+        .findOne({
+          phone: cleanPhone,
+          used: false,
+          expiresAt: { $gt: new Date() },
+        })
+        .sort({ createdAt: -1 });
+    }
 
     if (!otpRecord) {
       throw new BadRequestException('کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.');
     }
 
-    if (otpRecord.attempts >= 5) {
-      otpRecord.used = true;
-      await otpRecord.save();
-      throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
-    }
-
-    if (otpRecord.code !== cleanCode) {
+    if (!otpRecord.isVerified && otpRecord.code !== cleanCode) {
+      if (otpRecord.attempts >= 5) {
+        otpRecord.used = true;
+        await otpRecord.save();
+        throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
+      }
       otpRecord.attempts += 1;
       await otpRecord.save();
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
-    // Mark OTP code as used
+    // Mark OTP code as used so it cannot be re-used
     otpRecord.used = true;
     await otpRecord.save();
 
@@ -329,22 +344,23 @@ export class AuthService {
       { $set: { used: true } },
     );
 
-    // Generate random 5-digit numeric code
+    // Generate random 5-digit numeric code (valid for 5 minutes)
     const generatedCode = Math.floor(10000 + Math.random() * 90000).toString();
-    const expiresAt = new Date(Date.now() + 120 * 1000); // 2 minutes valid
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes valid
 
     await this.otpModel.create({
       phone: cleanPhone,
       code: generatedCode,
       expiresAt,
       used: false,
+      isVerified: false,
       attempts: 0,
     });
 
     // Console output for development without SMS gateway
     console.log('\n======================================================');
     console.log(`[HatefAroma OTP Service] 📱 Phone: ${cleanPhone} | 🔑 Code: ${generatedCode} (purpose: ${purpose})`);
-    console.log(`[HatefAroma OTP Service] ⏰ Expires in 120 seconds`);
+    console.log(`[HatefAroma OTP Service] ⏰ Expires in 5 minutes (resend timer: 120s)`);
     console.log('======================================================\n');
 
     return {
@@ -396,7 +412,7 @@ export class AuthService {
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
-    // If purpose is register: Just confirm code is valid without burning it
+    // If purpose is register: Mark verified and extend validity by 30 minutes
     if (purpose === 'register') {
       const existingUser = await this.usersService.findByPhone(cleanPhone);
       if (existingUser) {
@@ -404,6 +420,11 @@ export class AuthService {
           'حساب کاربری با این شماره موبایل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.',
         );
       }
+
+      otpRecord.isVerified = true;
+      otpRecord.expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes to complete profile
+      await otpRecord.save();
+
       return {
         success: true,
         verified: true,

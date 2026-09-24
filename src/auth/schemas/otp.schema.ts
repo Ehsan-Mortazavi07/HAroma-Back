@@ -17,6 +17,9 @@ export class Otp {
   @Prop({ default: false })
   used!: boolean;
 
+  @Prop({ default: false })
+  isVerified!: boolean;
+
   @Prop({ default: 0 })
   attempts!: number;
 
@@ -26,6 +29,7 @@ export class Otp {
 
 export const OtpSchema = SchemaFactory.createForClass(Otp);
 
-// Automatically remove OTP documents after 15 minutes (900 seconds)
-OtpSchema.index({ createdAt: 1 }, { expireAfterSeconds: 900 });
+// Automatically remove OTP documents after 1 hour (3600 seconds)
+OtpSchema.index({ createdAt: 1 }, { expireAfterSeconds: 3600 });
 OtpSchema.index({ phone: 1, used: 1 });
+
