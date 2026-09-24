@@ -333,6 +333,13 @@ export class AuthService {
           'حساب کاربری با این شماره موبایل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.',
         );
       }
+    } else if (purpose === 'verify-phone') {
+      const existingUser = await this.usersService.findByPhone(cleanPhone);
+      if (existingUser) {
+        throw new ConflictException(
+          'این شماره موبایل قبلاً توسط حساب کاربری دیگری ثبت و تایید شده است.',
+        );
+      }
     }
 
     // Rate-limit: 60 seconds anti-flood

@@ -208,7 +208,15 @@ export class UsersService implements OnModuleInit {
       user.fullName = (updateUserDto.fullName || '').trim();
     }
     if (updateUserDto.phone !== undefined) {
-      user.phone = (updateUserDto.phone || '').trim();
+      const cleanPhone = (updateUserDto.phone || '').trim();
+      if (!isAdmin && cleanPhone !== (user.phone || '')) {
+        throw new BadRequestException(
+          'تغییر یا ثبت شماره موبایل تنها از طریق بخش تایید شماره با کد یکبار مصرف (OTP) امکان‌پذیر است.',
+        );
+      }
+      if (isAdmin) {
+        user.phone = cleanPhone;
+      }
     }
     if (updateUserDto.avatar !== undefined) {
       user.avatar = updateUserDto.avatar || '';
