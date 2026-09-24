@@ -36,13 +36,13 @@ export class AuthController {
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(dto.identifier);
+    return this.authService.forgotPassword(dto.identifier, dto.channel);
   }
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto.identifier, dto.code, dto.newPassword);
+    return this.authService.resetPassword(dto.identifier, dto.code, dto.newPassword, dto.confirmPassword);
   }
 
   @Post('otp/send')

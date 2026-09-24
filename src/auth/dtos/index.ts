@@ -45,13 +45,17 @@ export class RegisterDto {
 }
 
 export class ForgotPasswordDto {
-  @IsNotEmpty({ message: 'نام کاربری یا ایمیل الزامی است.' })
+  @IsNotEmpty({ message: 'نام کاربری، شماره موبایل یا ایمیل الزامی است.' })
   @IsString()
   identifier!: string;
+
+  @IsOptional()
+  @IsString()
+  channel?: 'sms' | 'email';
 }
 
 export class ResetPasswordDto {
-  @IsNotEmpty({ message: 'نام کاربری یا ایمیل الزامی است.' })
+  @IsNotEmpty({ message: 'نام کاربری، شماره موبایل یا ایمیل الزامی است.' })
   @IsString()
   identifier!: string;
 
@@ -62,6 +66,10 @@ export class ResetPasswordDto {
   @IsNotEmpty({ message: 'رمز عبور جدید الزامی است.' })
   @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })
   newPassword!: string;
+
+  @IsOptional()
+  @IsString()
+  confirmPassword?: string;
 }
 
 export class SendOtpDto {

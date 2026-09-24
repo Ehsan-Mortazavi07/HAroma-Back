@@ -274,38 +274,178 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(identifier: string) {
-    const user = await this.usersService.findByUsernameOrEmail(identifier);
-    if (!user) {
-      throw new BadRequestException('کاربری با این مشخصات در سیستم یافت نشد.');
+  async forgotPassword(identifier: string, channel: 'sms' | 'email' = 'sms') {
+    const cleanId = (identifier || '').trim();
+    if (!cleanId) {
+      throw new BadRequestException('نام کاربری، شماره موبایل یا ایمیل الزامی است.');
     }
 
-    const email = user.email;
-    if (!email) {
-      throw new BadRequestException('برای این حساب کاربری آدرس ایمیلی ثبت نشده است.');
+    const user = await this.usersService.findByUsernameOrEmail(cleanId);
+    if (!user) {
+      throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
     }
-    const maskedEmail = email.replace(/(.{2})(.*)(?=@)/, (gp1, gp2, gp3) => gp2 + '*'.repeat(Math.max(3, gp3.length)));
+
+    const selectedChannel = channel === 'email' ? 'email' : 'sms';
+    let targetDestination = '';
+    let maskedDestination = '';
+
+    if (selectedChannel === 'email') {
+      if (!user.email || !user.email.trim()) {
+        throw new BadRequestException('برای این حساب کاربری آدرس ایمیلی ثبت نشده است.');
+      }
+      targetDestination = user.email.trim().toLowerCase();
+      maskedDestination = targetDestination.replace(/(.{2})(.*)(?=@)/, (gp1, gp2, gp3) => gp2 + '*'.repeat(Math.max(3, gp3.length)));
+    } else {
+      if (!user.phone || !user.phone.trim()) {
+        throw new BadRequestException('برای این حساب کاربری شماره موبایلی ثبت نشده است.');
+      }
+      targetDestination = normalizePhoneNumber(user.phone);
+      maskedDestination = targetDestination.replace(/(\d{4})(\d+)(\d{4})/, (m, p1, p2, p3) => `${p1}***${p3}`);
+    }
+
+    // Rate-limit & 2-minute expiration check (120 seconds)
+    // Check if an active, unexpired OTP already exists
+    const queryFilter: any = {
+      used: false,
+      purpose: 'reset-password',
+      expiresAt: { $gt: new Date() },
+    };
+    if (selectedChannel === 'email') {
+      queryFilter.email = targetDestination;
+    } else {
+      queryFilter.phone = targetDestination;
+    }
+
+    const recentOtp = await this.otpModel
+      .findOne(queryFilter)
+      .sort({ createdAt: -1 });
+
+    if (recentOtp) {
+      const elapsedSeconds = Math.floor((Date.now() - recentOtp.createdAt.getTime()) / 1000);
+      const waitSeconds = Math.max(1, 120 - elapsedSeconds);
+      throw new BadRequestException(
+        `کد تایید هنوز معتبر است. لطفاً ${waitSeconds} ثانیه دیگر جهت درخواست مجدد کد صبر کنید.`,
+      );
+    }
+
+    // Invalidate prior unused OTPs for this target & purpose
+    const invalidateFilter: any = {
+      used: false,
+      purpose: 'reset-password',
+    };
+    if (selectedChannel === 'email') {
+      invalidateFilter.email = targetDestination;
+    } else {
+      invalidateFilter.phone = targetDestination;
+    }
+    await this.otpModel.updateMany(invalidateFilter, { $set: { used: true } });
+
+    // Generate random 5-digit code
+    const generatedCode = Math.floor(10000 + Math.random() * 90000).toString();
+    const expiresAt = new Date(Date.now() + 120 * 1000); // Exactly 2 minutes (120 seconds)
+
+    await this.otpModel.create({
+      phone: selectedChannel === 'sms' ? targetDestination : (user.phone || undefined),
+      email: selectedChannel === 'email' ? targetDestination : (user.email ? user.email.toLowerCase() : undefined),
+      channel: selectedChannel,
+      purpose: 'reset-password',
+      code: generatedCode,
+      expiresAt,
+      used: false,
+      isVerified: false,
+      attempts: 0,
+    });
+
+    console.log('\n======================================================');
+    console.log(`[HatefAroma Reset Password] User: ${user.username} | Channel: ${selectedChannel} | Destination: ${targetDestination}`);
+    console.log(`[HatefAroma Reset Password] 🔑 Code: ${generatedCode} | ⏰ Valid for: 120s (2 minutes)`);
+    console.log('======================================================\n');
 
     return {
       success: true,
-      message: 'کد تایید ۶ رقمی بازیابی رمز عبور به ایمیل شما ارسال شد.',
-      email: maskedEmail,
-      demoCode: '123456',
+      message: selectedChannel === 'sms'
+        ? `کد تایید ۲ دقیقه‌ای به شماره ${maskedDestination} پیامک شد.`
+        : `کد تایید ۲ دقیقه‌ای برای آدرس ایمیل ${maskedDestination} در سیستم ثبت شد.`,
+      channel: selectedChannel,
+      target: maskedDestination,
+      expiresIn: 120,
+      devCode: generatedCode, // Returned for dev testing in UI
     };
   }
 
-  async resetPassword(identifier: string, code: string, newPassword: string) {
-    const user = await this.usersService.findByUsernameOrEmail(identifier);
-    if (!user) {
-      throw new BadRequestException('کاربری با این مشخصات در سیستم یافت نشد.');
+  async resetPassword(identifier: string, code: string, newPassword: string, confirmPassword?: string) {
+    const cleanId = (identifier || '').trim();
+    if (!cleanId) {
+      throw new BadRequestException('نام کاربری، شماره موبایل یا ایمیل الزامی است.');
     }
-    if (!code || code.trim().length < 4) {
-      throw new BadRequestException('کد تایید وارد شده نامعتبر است.');
+
+    if (confirmPassword && newPassword !== confirmPassword) {
+      throw new BadRequestException('رمز عبور جدید و تکرار آن یکسان نیستند.');
     }
+
     if (!newPassword || newPassword.length < 6) {
       throw new BadRequestException('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
     }
 
+    const user = await this.usersService.findByUsernameOrEmail(cleanId);
+    if (!user) {
+      throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
+    }
+
+    // Convert Persian/Arabic digits to English digits
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    let cleanCode = (code || '').trim();
+    for (let i = 0; i < 10; i++) {
+      cleanCode = cleanCode.replace(new RegExp(persianDigits[i], 'g'), i.toString());
+      cleanCode = cleanCode.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
+    }
+
+    if (!cleanCode || cleanCode.length < 4) {
+      throw new BadRequestException('کد تایید وارد شده نامعتبر است.');
+    }
+
+    // Match OTP by purpose and user's phone or email
+    const matchConditions: any[] = [];
+    if (user.phone) matchConditions.push({ phone: user.phone });
+    if (user.email) matchConditions.push({ email: user.email.toLowerCase() });
+
+    if (matchConditions.length === 0) {
+      throw new BadRequestException('اطلاعات تماس معتبری برای این کاربر یافت نشد.');
+    }
+
+    const otpRecord = await this.otpModel
+      .findOne({
+        used: false,
+        purpose: 'reset-password',
+        expiresAt: { $gt: new Date() },
+        $or: matchConditions,
+      })
+      .sort({ createdAt: -1 });
+
+    if (!otpRecord) {
+      throw new BadRequestException(
+        'کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.',
+      );
+    }
+
+    if (otpRecord.attempts >= 5) {
+      otpRecord.used = true;
+      await otpRecord.save();
+      throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
+    }
+
+    if (otpRecord.code !== cleanCode) {
+      otpRecord.attempts += 1;
+      await otpRecord.save();
+      throw new BadRequestException('کد تایید وارد شده نادرست است.');
+    }
+
+    // Mark as used
+    otpRecord.used = true;
+    await otpRecord.save();
+
+    // Hash and update password
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
