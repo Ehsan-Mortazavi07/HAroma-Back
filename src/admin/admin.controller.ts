@@ -39,6 +39,7 @@ import { CreateVipPlanDto, UpdateVipPlanDto } from '../vip-plans/dtos';
 import { UpdatePageSectionDto } from '../page-sections/dtos';
 import {
   CreateUserDto,
+  CreateAddressDto,
   UpdateAddressDto,
   UpdateUserDto,
   UpdateUserRoleDto,
@@ -370,6 +371,12 @@ export class AdminController {
   @Get('users/:id/addresses')
   async getUserAddresses(@Param('id') id: string) {
     return this.usersService.getAddresses(id);
+  }
+
+  @Post('users/:id/addresses')
+  @UseGuards(SuperAdminOnlyGuard)
+  async createUserAddress(@Param('id') id: string, @Body() dto: CreateAddressDto) {
+    return this.usersService.addAddress(id, dto);
   }
 
   @Patch('users/:id/addresses/:addressId')
