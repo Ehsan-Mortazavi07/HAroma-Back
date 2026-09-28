@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { UserRole } from '../../common/enums';
+import { addressTitleKey, normalizeAddressTitle } from '../address-title.util';
 
 export type UserDocument = User & Document;
 
@@ -9,8 +10,8 @@ export class UserAddress {
   @Prop({ type: String, default: () => new Types.ObjectId().toString() })
   _id!: string;
 
-  @Prop({ trim: true, default: '' })
-  title?: string;
+  @Prop({ required: true, trim: true })
+  title!: string;
 
   @Prop({ required: true, trim: true })
   province!: string;
@@ -47,6 +48,11 @@ export class UserAddress {
 }
 
 export const UserAddressSchema = SchemaFactory.createForClass(UserAddress);
+
+function hasUniqueAddressTitles(addresses: Array<{ title?: string | null }> = []) {
+  const keys = addresses.map((address) => addressTitleKey(address.title));
+  return keys.every(Boolean) && new Set(keys).size === keys.length;
+}
 
 @Schema({ timestamps: true })
 export class User {
@@ -122,13 +128,36 @@ export class User {
   @Prop({ default: false })
   deleted!: boolean;
 
-  @Prop({ type: [UserAddressSchema], default: [] })
+  @Prop({
+    type: [UserAddressSchema],
+    default: [],
+    validate: {
+      validator: hasUniqueAddressTitles,
+      message: 'عنوان آدرس‌های یک کاربر باید یکتا باشد.',
+    },
+  })
   addresses!: UserAddress[];
 
   hasPassword?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+UserSchema.pre('validate', function () {
+  const user = this as UserDocument;
+  const usedTitles = new Set<string>();
+  (user.addresses || []).forEach((address, index) => {
+    if (!normalizeAddressTitle(address.title)) {
+      let title = `نشانی ${index + 1}`;
+      let suffix = 2;
+      while (usedTitles.has(addressTitleKey(title))) {
+        title = `نشانی ${index + 1} (${suffix++})`;
+      }
+      address.title = title;
+    }
+    usedTitles.add(addressTitleKey(address.title));
+  });
+});
 
 UserSchema.set('toJSON', {
   virtuals: true,

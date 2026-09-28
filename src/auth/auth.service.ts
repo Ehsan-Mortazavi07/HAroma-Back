@@ -15,6 +15,7 @@ import { Otp, OtpDocument } from './schemas/otp.schema';
 import { LoginDto, RegisterDto } from './dtos';
 import { normalizePhoneNumber } from './utils/phone.util';
 import { UserRole } from '../common/enums';
+import { ensureUniqueAddressTitles } from '../users/address-title.util';
 
 @Injectable()
 export class AuthService {
@@ -530,6 +531,7 @@ export class AuthService {
     // Hash and update password
     user.password = await bcrypt.hash(newPassword, 10);
     user.hasPassword = true;
+    ensureUniqueAddressTitles(user.addresses || []);
     await user.save();
 
     return {
@@ -693,6 +695,7 @@ export class AuthService {
 
     if (!user.isPhoneVerified) {
       user.isPhoneVerified = true;
+      ensureUniqueAddressTitles(user.addresses || []);
       await user.save();
     }
 
@@ -778,6 +781,7 @@ export class AuthService {
 
     user.phone = cleanPhone;
     user.isPhoneVerified = true;
+    ensureUniqueAddressTitles(user.addresses || []);
     await user.save();
 
     const userObj = user.toObject();

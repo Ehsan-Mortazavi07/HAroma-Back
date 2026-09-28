@@ -226,9 +226,10 @@ export class UpdateUserVipDto {
 }
 
 export class CreateAddressDto {
-  @IsOptional()
+  @IsNotEmpty({ message: 'عنوان نشانی الزامی است.' })
   @IsString()
-  title?: string;
+  @Matches(/\S/, { message: 'عنوان نشانی الزامی است.' })
+  title!: string;
 
   @IsNotEmpty({ message: 'انتخاب استان الزامی است.' })
   @IsString()
@@ -278,6 +279,7 @@ export class CreateAddressDto {
 export class UpdateAddressDto {
   @IsOptional()
   @IsString()
+  @Matches(/\S/, { message: 'عنوان نشانی نمی‌تواند خالی باشد.' })
   title?: string;
 
   @IsOptional()
@@ -324,4 +326,3 @@ export class UpdateAddressDto {
   @IsBoolean()
   isDefault?: boolean;
 }
-

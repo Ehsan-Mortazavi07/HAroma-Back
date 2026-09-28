@@ -37,7 +37,13 @@ import { CreateAttributeDto, UpdateAttributeDto, QuickCreateAttributeDto } from 
 import { CreateCouponDto } from '../coupons/dtos';
 import { CreateVipPlanDto, UpdateVipPlanDto } from '../vip-plans/dtos';
 import { UpdatePageSectionDto } from '../page-sections/dtos';
-import { CreateUserDto, UpdateUserDto, UpdateUserRoleDto, UpdateUserVipDto } from '../users/dtos';
+import {
+  CreateUserDto,
+  UpdateAddressDto,
+  UpdateUserDto,
+  UpdateUserRoleDto,
+  UpdateUserVipDto,
+} from '../users/dtos';
 import { UserRole, OrderStatus } from '../common/enums';
 
 @Controller({ version: '1', path: 'admin' })
@@ -359,6 +365,30 @@ export class AdminController {
   @Get('users/:id')
   async getUser(@Param('id') id: string) {
     return this.usersService.findById(id);
+  }
+
+  @Get('users/:id/addresses')
+  async getUserAddresses(@Param('id') id: string) {
+    return this.usersService.getAddresses(id);
+  }
+
+  @Patch('users/:id/addresses/:addressId')
+  @UseGuards(SuperAdminOnlyGuard)
+  async updateUserAddress(
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+    @Body() dto: UpdateAddressDto,
+  ) {
+    return this.usersService.updateAddress(id, addressId, dto);
+  }
+
+  @Delete('users/:id/addresses/:addressId')
+  @UseGuards(SuperAdminOnlyGuard)
+  async deleteUserAddress(
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+  ) {
+    return this.usersService.deleteAddress(id, addressId);
   }
 
   @Patch('users/:id')

@@ -6,6 +6,7 @@ import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto, UpdateUserDto, CreateAddressDto, UpdateAddressDto } from './dtos';
 import { UserRole } from '../common/enums';
 import { normalizePhoneNumber } from '../auth/utils/phone.util';
+import { addressTitleKey, ensureUniqueAddressTitles, normalizeAddressTitle } from './address-title.util';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -289,6 +290,7 @@ export class UsersService implements OnModuleInit {
       }
     }
 
+    this.ensureAddressTitles(user);
     await user.save();
     return this.findById(id);
   }
@@ -303,6 +305,7 @@ export class UsersService implements OnModuleInit {
       throw new BadRequestException('شما نمی‌توانید سطح دسترسی حساب کاربری جاری خود را تنزل دهید.');
     }
     user.role = role;
+    this.ensureAddressTitles(user);
     return user.save();
   }
 
@@ -320,6 +323,7 @@ export class UsersService implements OnModuleInit {
     if ((user.role as string) === 'vip') {
       user.role = UserRole.USER;
     }
+    this.ensureAddressTitles(user);
     return user.save();
   }
 
@@ -387,6 +391,10 @@ export class UsersService implements OnModuleInit {
   // MULTIPLE ADDRESSES MANAGEMENT
   // ==========================================
 
+  private ensureAddressTitles(user: UserDocument) {
+    return ensureUniqueAddressTitles(user.addresses || []);
+  }
+
   private syncUserTopLevelAddress(user: UserDocument, addr: any) {
     if (addr) {
       user.province = (addr.province || '').trim();
@@ -418,6 +426,7 @@ export class UsersService implements OnModuleInit {
     if (!user) throw new NotFoundException('کاربر یافت نشد.');
 
     let addresses = user.addresses || [];
+    let shouldSave = this.ensureAddressTitles(user);
 
     // Auto-migrate legacy top-level address if addresses array is empty
     if (addresses.length === 0 && user.address && user.city) {
@@ -437,8 +446,8 @@ export class UsersService implements OnModuleInit {
         isDefault: true,
       };
       user.addresses = [legacyAddress];
-      await user.save();
       addresses = user.addresses;
+      shouldSave = true;
     }
 
     // Ensure at least one address is default if addresses exist
@@ -446,6 +455,10 @@ export class UsersService implements OnModuleInit {
     if (!hasDefault && addresses.length > 0) {
       addresses[0].isDefault = true;
       this.syncUserTopLevelAddress(user, addresses[0]);
+      shouldSave = true;
+    }
+
+    if (shouldSave) {
       await user.save();
     }
 
@@ -457,6 +470,7 @@ export class UsersService implements OnModuleInit {
     if (!user) throw new NotFoundException('کاربر یافت نشد.');
 
     if (!user.addresses) user.addresses = [];
+    this.ensureAddressTitles(user);
 
     // Auto-migrate legacy top-level address if addresses array is empty before adding new one
     if (user.addresses.length === 0 && user.address && user.city) {
@@ -481,6 +495,15 @@ export class UsersService implements OnModuleInit {
     // If it's the only address or dto asks for default, set it as default
     const shouldBeDefault = user.addresses.length === 0 || Boolean(dto.isDefault);
 
+    const title = normalizeAddressTitle(dto.title);
+    if (!title) {
+      throw new BadRequestException('عنوان نشانی الزامی است.');
+    }
+    const titleKey = addressTitleKey(title);
+    if (user.addresses.some((address) => addressTitleKey(address.title) === titleKey)) {
+      throw new ConflictException('این عنوان نشانی قبلاً برای این کاربر ثبت شده است.');
+    }
+
     if (shouldBeDefault) {
       user.addresses.forEach((a) => {
         a.isDefault = false;
@@ -489,7 +512,7 @@ export class UsersService implements OnModuleInit {
 
     const newAddress: any = {
       _id: new Types.ObjectId().toString(),
-      title: (dto.title || '').trim() || `نشانی ${user.addresses.length + 1}`,
+      title,
       province: (dto.province || '').trim(),
       city: (dto.city || '').trim(),
       address: (dto.address || '').trim(),
@@ -533,7 +556,23 @@ export class UsersService implements OnModuleInit {
       targetAddress.isDefault = true;
     }
 
-    if (dto.title !== undefined) targetAddress.title = (dto.title || '').trim();
+    if (dto.title !== undefined) {
+      const title = normalizeAddressTitle(dto.title);
+      if (!title) {
+        throw new BadRequestException('عنوان نشانی نمی‌تواند خالی باشد.');
+      }
+      const titleKey = addressTitleKey(title);
+      if (
+        user.addresses.some(
+          (address) =>
+            address._id?.toString() !== targetAddress._id?.toString() &&
+            addressTitleKey(address.title) === titleKey,
+        )
+      ) {
+        throw new ConflictException('این عنوان نشانی قبلاً برای این کاربر ثبت شده است.');
+      }
+      targetAddress.title = title;
+    }
     if (dto.province !== undefined) targetAddress.province = (dto.province || '').trim();
     if (dto.city !== undefined) targetAddress.city = (dto.city || '').trim();
     if (dto.address !== undefined) targetAddress.address = (dto.address || '').trim();
@@ -549,6 +588,7 @@ export class UsersService implements OnModuleInit {
       this.syncUserTopLevelAddress(user, targetAddress);
     }
 
+    this.ensureAddressTitles(user);
     await user.save();
 
     return {
@@ -576,6 +616,7 @@ export class UsersService implements OnModuleInit {
       this.syncUserTopLevelAddress(user, null);
     }
 
+    this.ensureAddressTitles(user);
     await user.save();
 
     return {
@@ -599,6 +640,7 @@ export class UsersService implements OnModuleInit {
 
     this.syncUserTopLevelAddress(user, target);
 
+    this.ensureAddressTitles(user);
     await user.save();
 
     return {
