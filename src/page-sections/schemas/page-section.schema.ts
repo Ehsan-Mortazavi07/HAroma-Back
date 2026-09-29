@@ -5,7 +5,10 @@ export type PageSectionDocument = PageSection & Document;
 
 @Schema({ _id: false })
 export class SectionBanner {
-  @Prop({ required: true })
+  @Prop({ default: '' })
+  id?: string;
+
+  @Prop({ default: '' })
   imageUrl!: string;
 
   @Prop({ default: '/' })
@@ -15,10 +18,19 @@ export class SectionBanner {
   title?: string;
 
   @Prop({ default: '' })
+  titleEn?: string;
+
+  @Prop({ default: '' })
   subtitle?: string;
 
   @Prop({ default: '' })
+  subtitleEn?: string;
+
+  @Prop({ default: '' })
   badge?: string;
+
+  @Prop({ default: '' })
+  badgeEn?: string;
 
   @Prop({ default: '' })
   bgGradient?: string;
@@ -39,6 +51,9 @@ export class PageSection {
 
   @Prop({ default: '' })
   subtitle?: string;
+
+  @Prop({ default: '' })
+  subtitleEn?: string;
 
   @Prop({ default: true })
   isVisible!: boolean;

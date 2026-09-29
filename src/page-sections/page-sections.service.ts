@@ -65,10 +65,12 @@ export class PageSectionsService {
       });
       if (dto.titleEn) section.titleEn = dto.titleEn;
       if (dto.subtitle) section.subtitle = dto.subtitle;
+      if (dto.subtitleEn) section.subtitleEn = dto.subtitleEn;
     } else {
       if (dto.title !== undefined) section.title = dto.title;
       if (dto.titleEn !== undefined) section.titleEn = dto.titleEn;
       if (dto.subtitle !== undefined) section.subtitle = dto.subtitle;
+      if (dto.subtitleEn !== undefined) section.subtitleEn = dto.subtitleEn;
       if (dto.isVisible !== undefined) section.isVisible = dto.isVisible;
       if (dto.isVipOnly !== undefined) section.isVipOnly = dto.isVipOnly;
       if (dto.order !== undefined) section.order = dto.order;
