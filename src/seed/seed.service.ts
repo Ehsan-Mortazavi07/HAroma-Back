@@ -1513,7 +1513,7 @@ export class SeedService implements OnApplicationBootstrap {
         subtitleEn: 'Authenticity, secure delivery, and expert guidance',
         isVisible: true,
         isVipOnly: false,
-        order: 2,
+        order: 3,
         config: {
           features: [
             { id: 'guarantee', title: 'ضمانت اصالت ۱۰۰٪ فیزیکی', titleEn: '100% Genuine Authenticity', description: 'سنجش بارکد رسمی و ضمانت سلامت کالا', descriptionEn: 'Official batch code & original perfume verification', imageUrl: '' },
@@ -1530,7 +1530,7 @@ export class SeedService implements OnApplicationBootstrap {
         subtitle: 'عطرهای برگزیده و باطراوت مناسب فصل جاری',
         isVisible: true,
         isVipOnly: false,
-        order: 3,
+        order: 5,
       },
       {
         sectionKey: 'promo_cards',
@@ -1540,7 +1540,7 @@ export class SeedService implements OnApplicationBootstrap {
         subtitleEn: 'Gift sets, VIP membership, fragrance advice, and free delivery',
         isVisible: true,
         isVipOnly: false,
-        order: 4,
+        order: 6,
         banners: [
           { id: 'gift', imageUrl: 'https://images.unsplash.com/photo-1512290900672-1f55b9ab0128?q=80&w=900&auto=format&fit=crop', link: '/products?category=gift-sets', title: 'پک‌های کادویی لوکس', titleEn: 'Luxury Gift Sets', subtitle: 'بهترین هدیه برای عزیزان با امکان انتخاب از تمام محصولات', subtitleEn: 'Present a gift card and let them choose their favorite scent', badge: 'هدیه ویژه', badgeEn: 'Gift Sets' },
           { id: 'vip', imageUrl: 'https://images.unsplash.com/photo-1588405748880-12d1d2a59f75?q=80&w=900&auto=format&fit=crop', link: '/vip', title: 'باشگاه مشتریان طلایی', titleEn: 'VIP Gold Club', subtitle: 'تخفیف‌های دائمی، ارسال رایگان و دسترسی به عطرهای نیش', subtitleEn: 'Enjoy exclusive discounts on luxury and niche fragrances', badge: 'تخفیف ویژه VIP', badgeEn: 'VIP 30% Off' },
@@ -1555,7 +1555,7 @@ export class SeedService implements OnApplicationBootstrap {
         subtitle: 'محبوب‌ترین رایحه‌ها از نگاه مشتریان هاتف آروما',
         isVisible: true,
         isVipOnly: false,
-        order: 5,
+        order: 4,
       },
       {
         sectionKey: 'vip_club_banner',
@@ -1565,7 +1565,7 @@ export class SeedService implements OnApplicationBootstrap {
         subtitleEn: 'Permanent discounts, free shipping, and access to niche fragrances',
         isVisible: true,
         isVipOnly: false,
-        order: 6,
+        order: 7,
         banners: [
           { id: 'vip-club', imageUrl: 'https://images.unsplash.com/photo-1547887537-6158d64c35b3?q=80&w=600&auto=format&fit=crop', link: '/vip', title: 'عضو VIP شوید و از تخفیف‌های دائمی و هدایای ارزشمند لذت ببرید', titleEn: 'Join VIP Club for permanent discounts & complimentary niche samples', subtitle: 'شروع پلن‌ها از فقط ۲۹۰,۰۰۰ تومان', subtitleEn: 'Membership tiers starting from only 290,000 Toman' },
         ],
@@ -1581,7 +1581,7 @@ export class SeedService implements OnApplicationBootstrap {
         subtitle: 'متن درباره برند، شماره تماس، آدرس و کپی‌رایت',
         isVisible: true,
         isVipOnly: false,
-        order: 7,
+        order: 8,
         config: {
           aboutFa: 'هاتف آروما با بیش از ۱۰ سال سابقه درخشان در عرضه معتبرترین و نایاب‌ترین عطرهای جهان، اصالت ۱۰۰٪ تمامی محصولات و ضمانت بازگشت وجه را برای مشتریان گرامی تضمین می‌نماید.',
           aboutEn: 'Hatef Aroma is the premier destination for rare, artisanal, and authentic niche fragrances, offering a 100% genuine guarantee and express delivery.',
@@ -1614,6 +1614,49 @@ export class SeedService implements OnApplicationBootstrap {
         await exists.save();
       }
     }
+
+    // Move only the untouched legacy seed order to the updated storefront flow.
+    // Any order changed through the admin panel is left as the administrator set it.
+    const legacySectionOrder: Record<string, number> = {
+      hero_banner: 1,
+      quick_categories: 2,
+      trust_features: 2,
+      you_might_need: 3,
+      promo_cards: 4,
+      weekly_best_sellers: 5,
+      vip_club_banner: 6,
+      footer_settings: 7,
+    };
+    const homepageSections = await this.pageSectionModel
+      .find({ sectionKey: { $in: Object.keys(legacySectionOrder) }, deleted: false })
+      .select('sectionKey order')
+      .lean()
+      .exec();
+    const hasUntouchedLegacyOrder =
+      homepageSections.length === Object.keys(legacySectionOrder).length &&
+      homepageSections.every((section) => legacySectionOrder[section.sectionKey] === section.order);
+
+    if (hasUntouchedLegacyOrder) {
+      const updatedSectionOrder: Record<string, number> = {
+        hero_banner: 1,
+        quick_categories: 2,
+        trust_features: 3,
+        weekly_best_sellers: 4,
+        you_might_need: 5,
+        promo_cards: 6,
+        vip_club_banner: 7,
+        footer_settings: 8,
+      };
+      await this.pageSectionModel.bulkWrite(
+        Object.entries(updatedSectionOrder).map(([sectionKey, order]) => ({
+          updateOne: {
+            filter: { sectionKey, deleted: false },
+            update: { $set: { order } },
+          },
+        })),
+      );
+    }
+
     this.logger.log('✅ Page Sections seeded and verified.');
   }
 }
