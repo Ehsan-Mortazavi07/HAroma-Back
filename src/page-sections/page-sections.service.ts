@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { PageSection, PageSectionDocument } from './schemas/page-section.schema';
-import { UpdatePageSectionDto } from './dtos';
+import { PageSectionPriorityDto, UpdatePageSectionDto } from './dtos';
 
 @Injectable()
 export class PageSectionsService {
@@ -77,7 +77,59 @@ export class PageSectionsService {
       if (dto.banners !== undefined) section.banners = dto.banners;
       if (dto.config !== undefined) section.config = dto.config;
     }
+    if (dto.priorityOrder) {
+      if (section.isNew) {
+        throw new BadRequestException('ابتدا بخش باید در فهرست بخش‌های صفحه ایجاد شود.');
+      }
+      return this.saveWithPriorityOrder(section, dto.priorityOrder);
+    }
+
     return section.save();
+  }
+
+  private async saveWithPriorityOrder(
+    editedSection: PageSectionDocument,
+    priorityOrder: PageSectionPriorityDto[],
+  ): Promise<PageSectionDocument> {
+    const currentSections = await this.pageSectionModel
+      .find({ deleted: false, sectionKey: { $ne: 'footer_settings' } })
+      .select('sectionKey')
+      .lean()
+      .exec();
+    const existingKeys = new Set(currentSections.map(({ sectionKey }) => sectionKey));
+    const submittedKeys = new Set(priorityOrder.map(({ sectionKey }) => sectionKey));
+    const submittedPriorities = new Set(priorityOrder.map(({ order }) => order));
+    const hasExactSections =
+      priorityOrder.length === currentSections.length &&
+      submittedKeys.size === priorityOrder.length &&
+      [...existingKeys].every((key) => submittedKeys.has(key));
+    const hasUniqueContiguousPriorities =
+      submittedPriorities.size === priorityOrder.length &&
+      priorityOrder.every(({ order }) => order >= 1 && order <= priorityOrder.length);
+
+    if (!hasExactSections || !hasUniqueContiguousPriorities) {
+      throw new BadRequestException('اولویت‌ها باید برای تمام بخش‌ها، بدون تکرار و پیوسته از ۱ ثبت شوند.');
+    }
+
+    const editedPriority = priorityOrder.find(({ sectionKey }) => sectionKey === editedSection.sectionKey);
+    if (!editedPriority) {
+      throw new BadRequestException('اولویت بخش ویرایش‌شده در فهرست اولویت‌ها موجود نیست.');
+    }
+
+    const { _id, __v, createdAt, updatedAt, ...sectionFields } = editedSection.toObject();
+    const operations = priorityOrder.map(({ sectionKey, order }) => ({
+      updateOne: {
+        filter: { sectionKey, deleted: false },
+        update: {
+          $set: sectionKey === editedSection.sectionKey
+            ? { ...sectionFields, order }
+            : { order },
+        },
+      },
+    }));
+
+    await this.pageSectionModel.bulkWrite(operations);
+    return this.findByKey(editedSection.sectionKey);
   }
 
   async toggleVipOnly(sectionKeyOrId: string, isVipOnly: boolean): Promise<PageSectionDocument> {

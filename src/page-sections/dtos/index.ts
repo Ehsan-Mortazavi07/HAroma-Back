@@ -6,7 +6,22 @@ import {
   IsNumber,
   IsArray,
   IsObject,
+  IsInt,
+  Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class PageSectionPriorityDto {
+  @IsString()
+  @IsNotEmpty()
+  sectionKey!: string;
+
+  @IsNumber()
+  @IsInt()
+  @Min(1)
+  order!: number;
+}
 
 export class UpdatePageSectionDto {
   @IsOptional()
@@ -36,6 +51,12 @@ export class UpdatePageSectionDto {
   @IsOptional()
   @IsNumber()
   order?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PageSectionPriorityDto)
+  priorityOrder?: PageSectionPriorityDto[];
 
   @IsOptional()
   @IsArray()
