@@ -257,21 +257,24 @@ export class OrdersService implements OnModuleInit {
     const order = await this.findById(id);
     const orderId = order._id;
     const currentVersion = order.get('__v');
-
-    if (dto.orderNumber && dto.orderNumber !== order.orderNumber) {
-      const duplicate = await this.orderModel.findOne({
-        _id: { $ne: orderId },
-        orderNumber: dto.orderNumber,
-        deleted: false,
-      }).select('_id').lean().exec();
-      if (duplicate) {
-        throw new BadRequestException('شماره سفارش تکراری است.');
-      }
+    const actualVersion = typeof currentVersion === 'number' ? currentVersion : 0;
+    if (dto.version !== actualVersion) {
+      throw new BadRequestException('این سفارش هم‌زمان تغییر کرده است؛ صفحه را تازه کنید و دوباره تلاش کنید.');
     }
 
-    const previousQuantities = this.sumOrderItemQuantities(order.items || []);
-    const nextQuantities = this.sumOrderItemQuantities(dto.items);
-    const productIds = [...new Set([...previousQuantities.keys(), ...nextQuantities.keys()])];
+    const existingItems = order.items || [];
+    const indexesToRemove = new Set(dto.removeItemIndexes);
+    if ([...indexesToRemove].some((index) => index >= existingItems.length)) {
+      throw new BadRequestException('یکی از اقلام انتخاب‌شده برای حذف دیگر در این سفارش نیست.');
+    }
+    if (existingItems.length - indexesToRemove.size < 1) {
+      throw new BadRequestException('سفارش باید حداقل یک قلم کالا داشته باشد.');
+    }
+
+    const retainedItems = existingItems.filter((_, index) => !indexesToRemove.has(index));
+    const removedItems = existingItems.filter((_, index) => indexesToRemove.has(index));
+    const removedQuantities = this.sumOrderItemQuantities(removedItems);
+    const productIds = [...removedQuantities.keys()];
     if (productIds.some((productId) => !Types.ObjectId.isValid(productId))) {
       throw new BadRequestException('شناسه یکی از محصولات سفارش نامعتبر است.');
     }
@@ -280,78 +283,40 @@ export class OrdersService implements OnModuleInit {
       : [];
     const productsById = new Map(products.map((product) => [String(product._id), product]));
 
-    for (const productId of nextQuantities.keys()) {
-      const product = productsById.get(productId);
-      if (!product || (product.deleted && !previousQuantities.has(productId))) {
-        throw new BadRequestException('یکی از محصولات انتخاب‌شده دیگر در دسترس نیست.');
-      }
-    }
-
-    const subtotal = dto.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const couponDiscount = dto.couponDiscount;
-    const vipDiscount = dto.vipDiscount;
-    const total = Math.max(0, subtotal - couponDiscount - vipDiscount + dto.shippingFee + dto.tax);
-    const statusHistory = [...(order.statusHistory || [])];
-    if (order.status !== dto.status) {
-      statusHistory.push({
-        status: dto.status,
-        changedAt: new Date(),
-        note: dto.statusNote?.trim() || '',
-      });
-    }
-
-    const update: Record<string, unknown> = {
-      orderNumber: dto.orderNumber?.trim() || order.orderNumber,
-      items: dto.items.map((item) => ({
-        product: new Types.ObjectId(item.product),
-        title: item.title.trim(),
-        price: item.price,
-        quantity: item.quantity,
-        image: item.image?.trim() || '',
-        selectedAttributes: item.selectedAttributes?.trim() || '',
-      })),
+    const subtotal = retainedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const total = Math.max(
+      0,
+      subtotal - order.couponDiscount - order.vipDiscount + order.shippingFee + order.tax,
+    );
+    const update = {
+      items: retainedItems,
       deliveryAddress: dto.deliveryAddress,
-      paymentMethod: dto.paymentMethod,
       subtotal,
-      shippingFee: dto.shippingFee,
-      couponDiscount,
-      vipDiscount,
-      couponCode: dto.couponCode?.trim() || '',
-      tax: dto.tax,
       total,
-      status: dto.status,
-      shippingMethod: dto.shippingMethod.trim(),
-      shippingProvider: dto.shippingProvider?.trim() || '',
-      trackingCode: dto.trackingCode?.trim() || '',
-      trackingUrl: dto.trackingUrl?.trim() || '',
-      shippedAt: dto.shippedAt ? new Date(dto.shippedAt) : dto.shippedAt ?? null,
-      deliveredAt: dto.deliveredAt ? new Date(dto.deliveredAt) : dto.deliveredAt ?? null,
-      statusHistory,
-      notes: dto.notes?.trim() || '',
       updatedAt: new Date(),
     };
-    if (dto.createdAt) update.createdAt = new Date(dto.createdAt);
 
     const appliedInventoryChanges: Array<{ productId: string; delta: number }> = [];
     try {
-      for (const productId of productIds) {
-        const delta = (nextQuantities.get(productId) || 0) - (previousQuantities.get(productId) || 0);
-        if (delta === 0) continue;
-        const product = productsById.get(productId);
-        if (!product || product.deleted) {
-          if (delta > 0) throw new BadRequestException('محصول حذف‌شده را نمی‌توان به سفارش اضافه کرد.');
-          continue;
-        }
+      const inventoryCanBeAdjusted = ![
+        OrderStatus.SHIPPED,
+        OrderStatus.DELIVERED,
+      ].includes(order.status);
+      if (inventoryCanBeAdjusted) {
+        for (const productId of productIds) {
+          const delta = -(removedQuantities.get(productId) || 0);
+          const product = productsById.get(productId);
+          if (!product || product.deleted) continue;
 
-        const filter: Record<string, unknown> = { _id: product._id, deleted: false };
-        if (delta > 0) filter.stockCount = { $gte: delta };
-        const result = await this.productModel.updateOne(filter, {
-          $inc: { stockCount: -delta, salesCount: delta },
-        }).exec();
-        if (result.modifiedCount !== 1) {
-          throw new BadRequestException(`موجودی کافی برای محصول ${productId} وجود ندارد.`);
+          const filter: Record<string, unknown> = { _id: product._id, deleted: false };
+          const result = await this.productModel.updateOne(filter, {
+            $inc: { stockCount: -delta, salesCount: delta },
+          }).exec();
+          if (result.modifiedCount !== 1) {
+            throw new BadRequestException('موجودی یکی از کالاها هم‌زمان تغییر کرده است؛ دوباره تلاش کنید.');
+          }
+          appliedInventoryChanges.push({ productId, delta });
         }
-        appliedInventoryChanges.push({ productId, delta });
       }
 
       const versionFilter: Record<string, unknown> = {
