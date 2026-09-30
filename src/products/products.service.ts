@@ -253,8 +253,19 @@ export class ProductsService implements OnModuleInit {
   }
 
   async findBySlug(slug: string): Promise<ProductDocument> {
+    const normalizedSlug = slug.toLowerCase();
+    const productFilter = Types.ObjectId.isValid(slug)
+      ? {
+          $or: [
+            { slug: normalizedSlug },
+            { _id: new Types.ObjectId(slug) },
+          ],
+          deleted: false,
+          isPublished: { $ne: false },
+        }
+      : { slug: normalizedSlug, deleted: false, isPublished: { $ne: false } };
     const product = await this.productModel
-      .findOne({ slug: slug.toLowerCase(), deleted: false, isPublished: { $ne: false } })
+      .findOne(productFilter)
       .populate('categories', 'name nameEn slug')
       .populate('brand', 'name nameEn slug logo')
       .populate('brands', 'name nameEn slug logo')

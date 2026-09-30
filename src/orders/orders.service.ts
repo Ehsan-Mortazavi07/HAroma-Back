@@ -154,6 +154,25 @@ export class OrdersService implements OnModuleInit {
       .exec();
   }
 
+  async findUserOrderById(userId: string, orderId: string): Promise<OrderDocument> {
+    if (!Types.ObjectId.isValid(orderId)) {
+      throw new NotFoundException('سفارش مورد نظر یافت نشد.');
+    }
+
+    const order = await this.orderModel
+      .findOne({
+        _id: new Types.ObjectId(orderId),
+        user: new Types.ObjectId(userId),
+        deleted: false,
+      })
+      .exec();
+
+    if (!order) {
+      throw new NotFoundException('سفارش مورد نظر یافت نشد.');
+    }
+    return order;
+  }
+
   async findById(id: string): Promise<OrderDocument> {
     const order = await this.orderModel
       .findOne({ _id: id, deleted: false })
