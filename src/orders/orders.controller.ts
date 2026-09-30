@@ -35,12 +35,6 @@ export class OrdersController {
     return this.ordersService.findUserOrders(user._id || user.id);
   }
 
-  @Get('orders/my/:id')
-  @UseGuards(JwtAuthGuard)
-  async getMyOrderById(@CurrentUser() user: any, @Param('id') id: string) {
-    return this.ordersService.findUserOrderById(user._id || user.id, id);
-  }
-
   @Get('orders/:id')
   @UseGuards(JwtAuthGuard)
   async getOrderById(@Param('id') id: string) {
