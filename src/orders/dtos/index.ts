@@ -10,6 +10,8 @@ import {
   IsEmail,
   ValidateIf,
   Matches,
+  MaxLength,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderStatus, PaymentMethod } from '../../common/enums';
@@ -119,5 +121,17 @@ export class UpdateOrderStatusDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   trackingCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  shippingProvider?: string;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== '' && value !== null && value !== undefined)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(500)
+  trackingUrl?: string;
 }

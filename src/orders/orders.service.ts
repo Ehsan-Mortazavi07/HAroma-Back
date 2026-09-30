@@ -114,8 +114,10 @@ export class OrdersService implements OnModuleInit {
       couponDiscount,
       vipDiscount,
       couponCode: validCouponCode,
+      shippingMethod: 'standard',
       total,
       status: OrderStatus.PROCESSING,
+      statusHistory: [{ status: OrderStatus.PROCESSING, changedAt: new Date() }],
       notes: createOrderDto.notes || '',
     });
 
@@ -227,9 +229,26 @@ export class OrdersService implements OnModuleInit {
     dto: UpdateOrderStatusDto,
   ): Promise<OrderDocument> {
     const order = await this.findById(id);
-    order.status = dto.status;
+    const changedAt = new Date();
+    if (order.status !== dto.status) {
+      order.status = dto.status;
+      order.statusHistory = order.statusHistory || [];
+      order.statusHistory.push({ status: dto.status, changedAt });
+      if (dto.status === OrderStatus.SHIPPED && !order.shippedAt) {
+        order.shippedAt = changedAt;
+      }
+      if (dto.status === OrderStatus.DELIVERED && !order.deliveredAt) {
+        order.deliveredAt = changedAt;
+      }
+    }
     if (dto.trackingCode !== undefined) {
       order.trackingCode = dto.trackingCode;
+    }
+    if (dto.shippingProvider !== undefined) {
+      order.shippingProvider = dto.shippingProvider.trim();
+    }
+    if (dto.trackingUrl !== undefined) {
+      order.trackingUrl = dto.trackingUrl.trim();
     }
     return order.save();
   }
@@ -241,10 +260,37 @@ export class OrdersService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.orderModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { status } },
-    );
+    if (validIds.length === 0) {
+      return { success: true, modifiedCount: 0 };
+    }
+
+    const changedAt = new Date();
+    const changedOrders = await this.orderModel
+      .find({ _id: { $in: validIds }, deleted: false, status: { $ne: status } })
+      .select('_id shippedAt deliveredAt')
+      .lean()
+      .exec();
+
+    if (changedOrders.length === 0) {
+      return { success: true, modifiedCount: 0 };
+    }
+
+    const writes = changedOrders.map((order) => {
+      const set: Record<string, unknown> = { status };
+      if (status === OrderStatus.SHIPPED && !order.shippedAt) set.shippedAt = changedAt;
+      if (status === OrderStatus.DELIVERED && !order.deliveredAt) set.deliveredAt = changedAt;
+
+      return {
+        updateOne: {
+          filter: { _id: order._id, deleted: false, status: { $ne: status } },
+          update: {
+            $set: set,
+            $push: { statusHistory: { status, changedAt } },
+          },
+        },
+      };
+    });
+    const result = await this.orderModel.bulkWrite(writes);
     return { success: true, modifiedCount: result.modifiedCount };
   }
 

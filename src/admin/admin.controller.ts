@@ -46,6 +46,7 @@ import {
   UpdateUserVipDto,
 } from '../users/dtos';
 import { UserRole, OrderStatus } from '../common/enums';
+import { UpdateOrderStatusDto } from '../orders/dtos';
 
 @Controller({ version: '1', path: 'admin' })
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -233,10 +234,9 @@ export class AdminController {
   @Patch('orders/:id/status')
   async updateOrderStatus(
     @Param('id') id: string,
-    @Body('status') status: OrderStatus,
-    @Body('trackingCode') trackingCode?: string,
+    @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.ordersService.updateStatus(id, { status, trackingCode });
+    return this.ordersService.updateStatus(id, dto);
   }
 
   @Delete('orders/:id')

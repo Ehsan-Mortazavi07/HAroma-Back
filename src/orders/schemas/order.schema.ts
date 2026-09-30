@@ -64,6 +64,21 @@ export class DeliveryAddress {
 
 export const DeliveryAddressSchema = SchemaFactory.createForClass(DeliveryAddress);
 
+@Schema({ _id: false })
+export class OrderStatusHistoryEntry {
+  @Prop({ type: String, enum: Object.values(OrderStatus), required: true })
+  status!: OrderStatus;
+
+  @Prop({ type: Date, required: true })
+  changedAt!: Date;
+
+  @Prop({ default: '' })
+  note?: string;
+}
+
+export const OrderStatusHistoryEntrySchema =
+  SchemaFactory.createForClass(OrderStatusHistoryEntry);
+
 @Schema({ timestamps: true })
 export class Order {
   @Prop({ required: true, unique: true })
@@ -100,6 +115,12 @@ export class Order {
   @Prop({ default: '' })
   couponCode?: string;
 
+  @Prop({ type: String, default: 'standard' })
+  shippingMethod!: string;
+
+  @Prop({ default: '' })
+  shippingProvider?: string;
+
   @Prop({ default: 0, min: 0 })
   tax!: number;
 
@@ -115,6 +136,18 @@ export class Order {
 
   @Prop({ default: '' })
   trackingCode?: string;
+
+  @Prop({ default: '' })
+  trackingUrl?: string;
+
+  @Prop({ type: Date, default: null })
+  shippedAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  deliveredAt?: Date | null;
+
+  @Prop({ type: [OrderStatusHistoryEntrySchema], default: [] })
+  statusHistory!: OrderStatusHistoryEntry[];
 
   @Prop({ default: '' })
   notes?: string;
