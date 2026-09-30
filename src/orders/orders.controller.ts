@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, UpdateOrderStatusDto } from './dtos';
+import { CreateOrderDto, UpdateAdminOrderDto, UpdateOrderStatusDto } from './dtos';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -90,6 +90,16 @@ export class OrdersController {
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async adminGetOrder(@Param('id') id: string) {
     return this.ordersService.findById(id);
+  }
+
+  @Patch('admin/orders/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminUpdateOrder(
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminOrderDto,
+  ) {
+    return this.ordersService.updateOrder(id, dto);
   }
 
   @Patch('admin/orders/:id/status')

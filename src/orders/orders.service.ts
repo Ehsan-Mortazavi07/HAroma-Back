@@ -7,7 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Order, OrderDocument } from './schemas/order.schema';
-import { CreateOrderDto, UpdateOrderStatusDto } from './dtos';
+import { CreateOrderDto, UpdateAdminOrderDto, UpdateOrderStatusDto } from './dtos';
 import { CouponsService } from '../coupons/coupons.service';
 import { UsersService } from '../users/users.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
@@ -251,6 +251,146 @@ export class OrdersService implements OnModuleInit {
       order.trackingUrl = dto.trackingUrl.trim();
     }
     return order.save();
+  }
+
+  async updateOrder(id: string, dto: UpdateAdminOrderDto): Promise<OrderDocument> {
+    const order = await this.findById(id);
+    const orderId = order._id;
+    const currentVersion = order.get('__v');
+
+    if (dto.orderNumber && dto.orderNumber !== order.orderNumber) {
+      const duplicate = await this.orderModel.findOne({
+        _id: { $ne: orderId },
+        orderNumber: dto.orderNumber,
+        deleted: false,
+      }).select('_id').lean().exec();
+      if (duplicate) {
+        throw new BadRequestException('شماره سفارش تکراری است.');
+      }
+    }
+
+    const previousQuantities = this.sumOrderItemQuantities(order.items || []);
+    const nextQuantities = this.sumOrderItemQuantities(dto.items);
+    const productIds = [...new Set([...previousQuantities.keys(), ...nextQuantities.keys()])];
+    if (productIds.some((productId) => !Types.ObjectId.isValid(productId))) {
+      throw new BadRequestException('شناسه یکی از محصولات سفارش نامعتبر است.');
+    }
+    const products = productIds.length
+      ? await this.productModel.find({ _id: { $in: productIds } }).select('_id deleted').lean().exec()
+      : [];
+    const productsById = new Map(products.map((product) => [String(product._id), product]));
+
+    for (const productId of nextQuantities.keys()) {
+      const product = productsById.get(productId);
+      if (!product || (product.deleted && !previousQuantities.has(productId))) {
+        throw new BadRequestException('یکی از محصولات انتخاب‌شده دیگر در دسترس نیست.');
+      }
+    }
+
+    const subtotal = dto.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const couponDiscount = dto.couponDiscount;
+    const vipDiscount = dto.vipDiscount;
+    const total = Math.max(0, subtotal - couponDiscount - vipDiscount + dto.shippingFee + dto.tax);
+    const statusHistory = [...(order.statusHistory || [])];
+    if (order.status !== dto.status) {
+      statusHistory.push({
+        status: dto.status,
+        changedAt: new Date(),
+        note: dto.statusNote?.trim() || '',
+      });
+    }
+
+    const update: Record<string, unknown> = {
+      orderNumber: dto.orderNumber?.trim() || order.orderNumber,
+      items: dto.items.map((item) => ({
+        product: new Types.ObjectId(item.product),
+        title: item.title.trim(),
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image?.trim() || '',
+        selectedAttributes: item.selectedAttributes?.trim() || '',
+      })),
+      deliveryAddress: dto.deliveryAddress,
+      paymentMethod: dto.paymentMethod,
+      subtotal,
+      shippingFee: dto.shippingFee,
+      couponDiscount,
+      vipDiscount,
+      couponCode: dto.couponCode?.trim() || '',
+      tax: dto.tax,
+      total,
+      status: dto.status,
+      shippingMethod: dto.shippingMethod.trim(),
+      shippingProvider: dto.shippingProvider?.trim() || '',
+      trackingCode: dto.trackingCode?.trim() || '',
+      trackingUrl: dto.trackingUrl?.trim() || '',
+      shippedAt: dto.shippedAt ? new Date(dto.shippedAt) : dto.shippedAt ?? null,
+      deliveredAt: dto.deliveredAt ? new Date(dto.deliveredAt) : dto.deliveredAt ?? null,
+      statusHistory,
+      notes: dto.notes?.trim() || '',
+      updatedAt: new Date(),
+    };
+    if (dto.createdAt) update.createdAt = new Date(dto.createdAt);
+
+    const appliedInventoryChanges: Array<{ productId: string; delta: number }> = [];
+    try {
+      for (const productId of productIds) {
+        const delta = (nextQuantities.get(productId) || 0) - (previousQuantities.get(productId) || 0);
+        if (delta === 0) continue;
+        const product = productsById.get(productId);
+        if (!product || product.deleted) {
+          if (delta > 0) throw new BadRequestException('محصول حذف‌شده را نمی‌توان به سفارش اضافه کرد.');
+          continue;
+        }
+
+        const filter: Record<string, unknown> = { _id: product._id, deleted: false };
+        if (delta > 0) filter.stockCount = { $gte: delta };
+        const result = await this.productModel.updateOne(filter, {
+          $inc: { stockCount: -delta, salesCount: delta },
+        }).exec();
+        if (result.modifiedCount !== 1) {
+          throw new BadRequestException(`موجودی کافی برای محصول ${productId} وجود ندارد.`);
+        }
+        appliedInventoryChanges.push({ productId, delta });
+      }
+
+      const versionFilter: Record<string, unknown> = {
+        _id: orderId,
+        deleted: false,
+        __v: typeof currentVersion === 'number' ? currentVersion : { $exists: false },
+      };
+      const orderUpdateResult = await this.orderModel.updateOne(
+        versionFilter,
+        { $set: update, $inc: { __v: 1 } },
+        { runValidators: true, timestamps: false },
+      ).exec();
+      if (orderUpdateResult.matchedCount !== 1) {
+        const stillExists = await this.orderModel.exists({ _id: orderId, deleted: false });
+        if (!stillExists) throw new NotFoundException('سفارش مورد نظر یافت نشد.');
+        throw new BadRequestException('این سفارش هم‌زمان تغییر کرده است؛ صفحه را تازه کنید و دوباره تلاش کنید.');
+      }
+    } catch (error) {
+      await Promise.all(appliedInventoryChanges.map(({ productId, delta }) =>
+        this.productModel.updateOne(
+          { _id: new Types.ObjectId(productId) },
+          { $inc: { stockCount: delta, salesCount: -delta } },
+        ).exec().catch(() => undefined),
+      ));
+      if ((error as { code?: number })?.code === 11000) {
+        throw new BadRequestException('شماره سفارش تکراری است.');
+      }
+      throw error;
+    }
+    return this.findById(id);
+  }
+
+  private sumOrderItemQuantities(items: Array<{ product: Types.ObjectId | string; quantity: number }>) {
+    const totals = new Map<string, number>();
+    for (const item of items) {
+      const productId = String(item.product);
+      totals.set(productId, (totals.get(productId) || 0) + item.quantity);
+    }
+    return totals;
   }
 
   async bulkUpdateStatus(

@@ -12,13 +12,16 @@ import {
   Matches,
   MaxLength,
   IsUrl,
+  IsDateString,
+  ArrayMinSize,
+  IsMongoId,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderStatus, PaymentMethod } from '../../common/enums';
 
 export class OrderItemDto {
   @IsNotEmpty()
-  @IsString()
+  @IsMongoId()
   product!: string;
 
   @IsNotEmpty()
@@ -134,4 +137,91 @@ export class UpdateOrderStatusDto {
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(500)
   trackingUrl?: string;
+}
+
+export class UpdateAdminOrderDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  orderNumber?: string;
+
+  @IsArray()
+  @ArrayMinSize(1, { message: 'سفارش باید حداقل یک قلم کالا داشته باشد.' })
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemDto)
+  items!: OrderItemDto[];
+
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => DeliveryAddressDto)
+  deliveryAddress!: DeliveryAddressDto;
+
+  @IsEnum(PaymentMethod)
+  paymentMethod!: PaymentMethod;
+
+  @IsNumber()
+  @Min(0)
+  shippingFee!: number;
+
+  @IsNumber()
+  @Min(0)
+  couponDiscount!: number;
+
+  @IsNumber()
+  @Min(0)
+  vipDiscount!: number;
+
+  @IsNumber()
+  @Min(0)
+  tax!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  couponCode?: string;
+
+  @IsEnum(OrderStatus)
+  status!: OrderStatus;
+
+  @IsString()
+  @MaxLength(80)
+  shippingMethod!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  shippingProvider?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  trackingCode?: string;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== '' && value !== null)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(500)
+  trackingUrl?: string;
+
+  @IsOptional()
+  @IsDateString()
+  createdAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  shippedAt?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  deliveredAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  statusNote?: string;
 }
