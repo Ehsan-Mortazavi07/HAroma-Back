@@ -41,7 +41,7 @@ export class RegisterDto {
 
   @IsNotEmpty({ message: 'رمز عبور الزامی است.' })
   @IsString()
-  @MinLength(12, { message: 'رمز عبور باید حداقل ۱۲ کاراکتر باشد.' })
+  @MinLength(8, { message: 'رمز عبور باید حداقل ۸ کاراکتر باشد.' })
   @MaxLength(128)
   password!: string;
 
@@ -80,7 +80,7 @@ export class ResetPasswordDto {
   code!: string;
 
   @IsNotEmpty({ message: 'رمز عبور جدید الزامی است.' })
-  @MinLength(12, { message: 'رمز عبور باید حداقل ۱۲ کاراکتر باشد.' })
+  @MinLength(8, { message: 'رمز عبور باید حداقل ۸ کاراکتر باشد.' })
   @MaxLength(128)
   newPassword!: string;
 

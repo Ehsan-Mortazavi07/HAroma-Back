@@ -181,8 +181,8 @@ export class AuthService {
     }
 
     const rawPassword = registerDto.password?.trim() || '';
-    if (rawPassword.length < 12) {
-      throw new BadRequestException('رمز عبور باید حداقل ۱۲ کاراکتر باشد.');
+    if (rawPassword.length < 8) {
+      throw new BadRequestException('رمز عبور باید حداقل ۸ کاراکتر باشد.');
     }
     if (rawPassword !== registerDto.confirmPassword?.trim()) {
       throw new BadRequestException('رمز عبور با تکرار آن مطابقت ندارد.');
@@ -409,8 +409,8 @@ export class AuthService {
       throw new BadRequestException('رمز عبور جدید و تکرار آن یکسان نیستند.');
     }
 
-    if (!newPassword || newPassword.length < 12) {
-      throw new BadRequestException('رمز عبور جدید باید حداقل ۱۲ کاراکتر باشد.');
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('رمز عبور جدید باید حداقل ۸ کاراکتر باشد.');
     }
 
     const cleanCode = this.normalizeOtpCode(code || '');

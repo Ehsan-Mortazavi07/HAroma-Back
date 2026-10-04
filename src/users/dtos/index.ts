@@ -40,7 +40,7 @@ export class CreateUserDto {
   @IsOptional()
   @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
-  @MinLength(12, { message: 'رمز عبور باید حداقل ۱۲ کاراکتر باشد.' })
+  @MinLength(8, { message: 'رمز عبور باید حداقل ۸ کاراکتر باشد.' })
   @MaxLength(128)
   password?: string;
 
@@ -144,7 +144,7 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(12, { message: 'رمز عبور باید حداقل ۱۲ کاراکتر باشد.' })
+  @MinLength(8, { message: 'رمز عبور باید حداقل ۸ کاراکتر باشد.' })
   @MaxLength(128)
   password?: string;
 
