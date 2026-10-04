@@ -1,16 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { put } from '@vercel/blob';
 import * as fs from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
 import { randomUUID } from 'crypto';
-import { BadRequestException } from '@nestjs/common';
 
 @Injectable()
 export class UploadsService {
   private readonly uploadDir = path.resolve(process.cwd(), 'public/uploads');
 
   constructor() {
-    if (!fs.existsSync(this.uploadDir)) {
+    // Vercel's function filesystem is ephemeral and should not be used for
+    // uploads. Production images are written to Blob instead.
+    if (!process.env.VERCEL && !fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true });
     }
   }
@@ -22,6 +29,7 @@ export class UploadsService {
 
     const filename = `aroma_${randomUUID()}.webp`;
     const targetPath = path.join(this.uploadDir, filename);
+    let optimizedImage: Buffer;
 
     try {
       const image = sharp(file.buffer, { limitInputPixels: 40_000_000 });
@@ -29,14 +37,37 @@ export class UploadsService {
       if (!metadata.format || !['jpeg', 'png', 'webp', 'avif'].includes(metadata.format)) {
         throw new BadRequestException('محتوای فایل، تصویر پشتیبانی‌شده نیست.');
       }
-      await image.rotate()
+      optimizedImage = await image.rotate()
         .webp({ quality: 85 })
-        .toFile(targetPath);
+        .toBuffer();
     } catch (error) {
-      await fs.promises.rm(targetPath, { force: true });
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException('خواندن تصویر ناموفق بود. فایل معتبر تصویر ارسال کنید.');
     }
+
+    if (process.env.VERCEL) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        throw new InternalServerErrorException('ذخیره‌سازی تصویر تنظیم نشده است.');
+      }
+
+      try {
+        const blob = await put(filename, optimizedImage, {
+          access: 'public',
+          contentType: 'image/webp',
+          addRandomSuffix: false,
+        });
+
+        return {
+          path: blob.url,
+          url: blob.url,
+          filename,
+        };
+      } catch {
+        throw new ServiceUnavailableException('ذخیره تصویر ناموفق بود. دوباره تلاش کنید.');
+      }
+    }
+
+    await fs.promises.writeFile(targetPath, optimizedImage);
 
     const relativePath = `/uploads/${filename}`;
     return {
