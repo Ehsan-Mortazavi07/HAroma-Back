@@ -1,3 +1,5 @@
+import { sanitizeProductDescription } from '../products/product-content.util';
+
 export function mapProductSummary(product: any) {
   if (!product) return null;
   return {
@@ -25,7 +27,7 @@ export function mapProductDetail(product: any) {
   if (!product) return null;
   return {
     ...mapProductSummary(product),
-    description: product.description,
+    description: sanitizeProductDescription(product.description),
     viewsCount: product.viewsCount,
     updatedAt: product.updatedAt,
   };

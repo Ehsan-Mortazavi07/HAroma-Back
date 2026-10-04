@@ -15,6 +15,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UserRole, OrderStatus } from '../common/enums';
+import { BulkIdsDto, BulkSetOrderStatusDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class OrdersController {
@@ -37,13 +38,14 @@ export class OrdersController {
 
   @Get('orders/:id')
   @UseGuards(JwtAuthGuard)
-  async getOrderById(@Param('id') id: string) {
-    return this.ordersService.findById(id);
+  async getOrderById(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.ordersService.findUserOrderById(id, String(user._id || user.id));
   }
 
   @Get('orders/track/:orderNumber')
-  async trackOrder(@Param('orderNumber') orderNumber: string) {
-    return this.ordersService.findByOrderNumber(orderNumber);
+  @UseGuards(JwtAuthGuard)
+  async trackOrder(@Param('orderNumber') orderNumber: string, @CurrentUser() user: any) {
+    return this.ordersService.findByOrderNumber(orderNumber, String(user._id || user.id));
   }
 
   // Admin & Editor Endpoints
@@ -71,18 +73,15 @@ export class OrdersController {
   @Patch('admin/orders/bulk/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
-  async adminBulkUpdateStatus(
-    @Body('ids') ids: string[],
-    @Body('status') status: OrderStatus,
-  ) {
-    return this.ordersService.bulkUpdateStatus(ids, status);
+  async adminBulkUpdateStatus(@Body() dto: BulkSetOrderStatusDto) {
+    return this.ordersService.bulkUpdateStatus(dto.ids, dto.status);
   }
 
   @Post('admin/orders/bulk/delete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async adminBulkDeleteOrders(@Body('ids') ids: string[]) {
-    return this.ordersService.bulkSoftDelete(ids);
+  async adminBulkDeleteOrders(@Body() dto: BulkIdsDto) {
+    return this.ordersService.bulkSoftDelete(dto.ids);
   }
 
   @Get('admin/orders/:id')

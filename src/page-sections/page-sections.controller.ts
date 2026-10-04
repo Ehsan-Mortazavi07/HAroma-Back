@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums';
+import { SetVisibilityDto, SetVipOnlyDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class PageSectionsController {
@@ -44,9 +45,9 @@ export class PageSectionsController {
   @Roles(UserRole.ADMIN)
   async toggleVip(
     @Param('sectionKey') sectionKey: string,
-    @Body('isVipOnly') isVipOnly: boolean,
+    @Body() dto: SetVipOnlyDto,
   ) {
-    return this.pageSectionsService.toggleVipOnly(sectionKey, isVipOnly);
+    return this.pageSectionsService.toggleVipOnly(sectionKey, dto.isVipOnly);
   }
 
   @Patch('admin/page-sections/:sectionKey/toggle-visibility')
@@ -54,8 +55,8 @@ export class PageSectionsController {
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async toggleVisibility(
     @Param('sectionKey') sectionKey: string,
-    @Body('isVisible') isVisible: boolean,
+    @Body() dto: SetVisibilityDto,
   ) {
-    return this.pageSectionsService.toggleVisibility(sectionKey, isVisible);
+    return this.pageSectionsService.toggleVisibility(sectionKey, dto.isVisible);
   }
 }

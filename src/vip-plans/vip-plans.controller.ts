@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums';
+import { BulkIdsDto, BulkSetActiveDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class VipPlansController {
@@ -37,18 +38,15 @@ export class VipPlansController {
   @Patch('admin/vip-plans/bulk/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async adminBulkUpdateStatus(
-    @Body('ids') ids: string[],
-    @Body('isActive') isActive: boolean,
-  ) {
-    return this.vipPlansService.bulkUpdateStatus(ids, isActive);
+  async adminBulkUpdateStatus(@Body() dto: BulkSetActiveDto) {
+    return this.vipPlansService.bulkUpdateStatus(dto.ids, dto.isActive);
   }
 
   @Post('admin/vip-plans/bulk/delete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async adminBulkDelete(@Body('ids') ids: string[]) {
-    return this.vipPlansService.bulkSoftDelete(ids);
+  async adminBulkDelete(@Body() dto: BulkIdsDto) {
+    return this.vipPlansService.bulkSoftDelete(dto.ids);
   }
 
   @Get('admin/vip-plans/:id')

@@ -17,20 +17,20 @@ import { UploadsModule } from './uploads/uploads.module';
 import { AdminModule } from './admin/admin.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { SeedModule } from './seed/seed.module';
+import { validateEnvironment } from './config/environment';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', '.env.local'],
+      validate: validateEnvironment,
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        uri:
-          configService.get<string>('MONGODB_URI') ||
-          'mongodb://127.0.0.1:27017/hatefaroma',
+        uri: configService.getOrThrow<string>('MONGODB_URI'),
       }),
     }),
     AdminModule,

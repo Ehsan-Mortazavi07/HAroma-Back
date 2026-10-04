@@ -10,11 +10,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CouponsService } from './coupons.service';
-import { CreateCouponDto, ValidateCouponDto } from './dtos';
+import { CreateCouponDto, UpdateCouponDto, ValidateCouponDto } from './dtos';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums';
+import { BulkIdsDto, BulkSetActiveDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class CouponsController {
@@ -38,18 +39,15 @@ export class CouponsController {
   @Patch('admin/coupons/bulk/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async adminBulkUpdateStatus(
-    @Body('ids') ids: string[],
-    @Body('isActive') isActive: boolean,
-  ) {
-    return this.couponsService.bulkUpdateStatus(ids, isActive);
+  async adminBulkUpdateStatus(@Body() dto: BulkSetActiveDto) {
+    return this.couponsService.bulkUpdateStatus(dto.ids, dto.isActive);
   }
 
   @Post('admin/coupons/bulk/delete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async adminBulkDelete(@Body('ids') ids: string[]) {
-    return this.couponsService.bulkSoftDelete(ids);
+  async adminBulkDelete(@Body() dto: BulkIdsDto) {
+    return this.couponsService.bulkSoftDelete(dto.ids);
   }
 
   @Get('admin/coupons/:id')
@@ -71,7 +69,7 @@ export class CouponsController {
   @Roles(UserRole.ADMIN)
   async adminUpdateCoupon(
     @Param('id') id: string,
-    @Body() dto: Partial<CreateCouponDto>,
+    @Body() dto: UpdateCouponDto,
   ) {
     return this.couponsService.update(id, dto);
   }

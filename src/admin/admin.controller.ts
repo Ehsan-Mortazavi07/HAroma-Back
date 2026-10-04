@@ -34,7 +34,7 @@ import {
 } from '../products/dtos';
 import { CreateCategoryDto, UpdateCategoryDto } from '../categories/dtos';
 import { CreateAttributeDto, UpdateAttributeDto, QuickCreateAttributeDto } from '../attributes/dtos';
-import { CreateCouponDto } from '../coupons/dtos';
+import { CreateCouponDto, UpdateCouponDto } from '../coupons/dtos';
 import { CreateVipPlanDto, UpdateVipPlanDto } from '../vip-plans/dtos';
 import { UpdatePageSectionDto } from '../page-sections/dtos';
 import {
@@ -47,6 +47,14 @@ import {
 } from '../users/dtos';
 import { UserRole, OrderStatus } from '../common/enums';
 import { UpdateOrderStatusDto } from '../orders/dtos';
+import {
+  BulkIdsDto,
+  BulkSetActiveDto,
+  BulkSetOrderStatusDto,
+  BulkSetVipDto,
+  SetVisibilityDto,
+  SetVipOnlyDto,
+} from '../common/dtos/admin-operation.dto';
 
 @Controller({ version: '1', path: 'admin' })
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -128,14 +136,14 @@ export class AdminController {
 
   // Bulk operations MUST come before :id routes
   @Patch('categories/bulk/status')
-  async bulkUpdateCategoriesStatus(@Body('ids') ids: string[], @Body('isActive') isActive: boolean) {
-    return this.categoriesService.bulkUpdateStatus(ids, isActive);
+  async bulkUpdateCategoriesStatus(@Body() dto: BulkSetActiveDto) {
+    return this.categoriesService.bulkUpdateStatus(dto.ids, dto.isActive);
   }
 
   @Post('categories/bulk/delete')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteCategories(@Body('ids') ids: string[]) {
-    return this.categoriesService.bulkSoftDelete(ids);
+  async bulkDeleteCategories(@Body() dto: BulkIdsDto) {
+    return this.categoriesService.bulkSoftDelete(dto.ids);
   }
 
   @Get('categories/:id')
@@ -174,8 +182,8 @@ export class AdminController {
 
   @Post('attributes/bulk/delete')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteAttributes(@Body('ids') ids: string[]) {
-    return this.attributesService.bulkSoftDelete(ids);
+  async bulkDeleteAttributes(@Body() dto: BulkIdsDto) {
+    return this.attributesService.bulkSoftDelete(dto.ids);
   }
 
   @Get('attributes/:id')
@@ -213,17 +221,14 @@ export class AdminController {
 
   // Bulk operations MUST come before :id routes to prevent matching 'bulk' as :id
   @Patch('orders/bulk/status')
-  async bulkUpdateOrdersStatus(
-    @Body('ids') ids: string[],
-    @Body('status') status: OrderStatus,
-  ) {
-    return this.ordersService.bulkUpdateStatus(ids, status);
+  async bulkUpdateOrdersStatus(@Body() dto: BulkSetOrderStatusDto) {
+    return this.ordersService.bulkUpdateStatus(dto.ids, dto.status);
   }
 
   @Post('orders/bulk/delete')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteOrders(@Body('ids') ids: string[]) {
-    return this.ordersService.bulkSoftDelete(ids);
+  async bulkDeleteOrders(@Body() dto: BulkIdsDto) {
+    return this.ordersService.bulkSoftDelete(dto.ids);
   }
 
   @Get('orders/:id')
@@ -260,21 +265,18 @@ export class AdminController {
 
   // Bulk operations MUST come before :id routes
   @Patch('coupons/bulk/status')
-  async bulkUpdateCouponsStatus(
-    @Body('ids') ids: string[],
-    @Body('isActive') isActive: boolean,
-  ) {
-    return this.couponsService.bulkUpdateStatus(ids, isActive);
+  async bulkUpdateCouponsStatus(@Body() dto: BulkSetActiveDto) {
+    return this.couponsService.bulkUpdateStatus(dto.ids, dto.isActive);
   }
 
   @Post('coupons/bulk/delete')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteCoupons(@Body('ids') ids: string[]) {
-    return this.couponsService.bulkSoftDelete(ids);
+  async bulkDeleteCoupons(@Body() dto: BulkIdsDto) {
+    return this.couponsService.bulkSoftDelete(dto.ids);
   }
 
   @Patch('coupons/:id')
-  async updateCoupon(@Param('id') id: string, @Body() dto: Partial<CreateCouponDto>) {
+  async updateCoupon(@Param('id') id: string, @Body() dto: UpdateCouponDto) {
     return this.couponsService.update(id, dto);
   }
 
@@ -298,17 +300,14 @@ export class AdminController {
 
   // Bulk operations MUST come before :id routes
   @Patch('vip-plans/bulk/status')
-  async bulkUpdateVipPlansStatus(
-    @Body('ids') ids: string[],
-    @Body('isActive') isActive: boolean,
-  ) {
-    return this.vipPlansService.bulkUpdateStatus(ids, isActive);
+  async bulkUpdateVipPlansStatus(@Body() dto: BulkSetActiveDto) {
+    return this.vipPlansService.bulkUpdateStatus(dto.ids, dto.isActive);
   }
 
   @Post('vip-plans/bulk/delete')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteVipPlans(@Body('ids') ids: string[]) {
-    return this.vipPlansService.bulkSoftDelete(ids);
+  async bulkDeleteVipPlans(@Body() dto: BulkIdsDto) {
+    return this.vipPlansService.bulkSoftDelete(dto.ids);
   }
 
   @Patch('vip-plans/:id')
@@ -348,19 +347,15 @@ export class AdminController {
   // Bulk operations MUST come before :id routes to avoid matching 'bulk' as an :id param
   @Patch('users/bulk/vip')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkUpdateUsersVip(
-    @Body('ids') ids: string[],
-    @Body('isVip') isVip: boolean,
-    @Body('durationDays') durationDays?: number,
-  ) {
-    return this.usersService.bulkUpdateVip(ids, isVip, durationDays);
+  async bulkUpdateUsersVip(@Body() dto: BulkSetVipDto) {
+    return this.usersService.bulkUpdateVip(dto.ids, dto.isVip, dto.durationDays);
   }
 
   @Post('users/bulk/delete')
   @UseGuards(SuperAdminOnlyGuard)
-  async bulkDeleteUsers(@Body('ids') ids: string[], @CurrentUser() currentUser: any) {
+  async bulkDeleteUsers(@Body() dto: BulkIdsDto, @CurrentUser() currentUser: any) {
     const currentUserId = currentUser?._id?.toString() || currentUser?.sub?.toString();
-    return this.usersService.bulkSoftDelete(ids, currentUserId);
+    return this.usersService.bulkSoftDelete(dto.ids, currentUserId);
   }
 
   @Get('users/:id')
@@ -442,16 +437,16 @@ export class AdminController {
   }
 
   @Patch('page-sections/:key/toggle-vip')
-  async toggleSectionVip(@Param('key') key: string, @Body('isVipOnly') isVipOnly: boolean) {
-    return this.pageSectionsService.toggleVipOnly(key, isVipOnly);
+  async toggleSectionVip(@Param('key') key: string, @Body() dto: SetVipOnlyDto) {
+    return this.pageSectionsService.toggleVipOnly(key, dto.isVipOnly);
   }
 
   @Patch('page-sections/:key/toggle-visibility')
   async toggleSectionVisibility(
     @Param('key') key: string,
-    @Body('isVisible') isVisible: boolean,
+    @Body() dto: SetVisibilityDto,
   ) {
-    return this.pageSectionsService.toggleVisibility(key, isVisible);
+    return this.pageSectionsService.toggleVisibility(key, dto.isVisible);
   }
 
   // ----------------------------------------------------

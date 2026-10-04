@@ -11,14 +11,14 @@ export class Otp {
   @Prop({ required: false, index: true, trim: true, lowercase: true })
   email?: string;
 
-  @Prop({ required: false, enum: ['sms', 'email'], default: 'sms' })
-  channel?: string;
+  @Prop({ required: true, enum: ['sms', 'email'] })
+  channel!: 'sms' | 'email';
 
-  @Prop({ required: false, trim: true, index: true })
-  purpose?: string;
+  @Prop({ required: true, enum: ['login', 'register', 'verify-phone', 'reset-password'], index: true })
+  purpose!: 'login' | 'register' | 'verify-phone' | 'reset-password';
 
-  @Prop({ required: true, trim: true })
-  code!: string;
+  @Prop({ required: true, select: false })
+  codeHash!: string;
 
   @Prop({ required: true })
   expiresAt!: Date;
@@ -43,4 +43,3 @@ OtpSchema.index({ createdAt: 1 }, { expireAfterSeconds: 3600 });
 OtpSchema.index({ phone: 1, used: 1 });
 OtpSchema.index({ email: 1, used: 1 });
 OtpSchema.index({ purpose: 1, used: 1 });
-

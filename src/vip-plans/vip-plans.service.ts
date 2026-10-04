@@ -1,19 +1,14 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { VipPlan, VipPlanDocument } from './schemas/vip-plan.schema';
 import { CreateVipPlanDto, UpdateVipPlanDto } from './dtos';
 
 @Injectable()
-export class VipPlansService implements OnModuleInit {
+export class VipPlansService {
   constructor(
     @InjectModel(VipPlan.name) private vipPlanModel: Model<VipPlanDocument>,
   ) {}
-
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.vipPlanModel.deleteMany({ deleted: true }).catch(() => {});
-  }
 
   async create(dto: CreateVipPlanDto): Promise<VipPlanDocument> {
     const plan = new this.vipPlanModel(dto);
@@ -52,7 +47,7 @@ export class VipPlansService implements OnModuleInit {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const plan = await this.findById(id);
-    await this.vipPlanModel.deleteOne({ _id: plan._id });
+    await this.vipPlanModel.updateOne({ _id: plan._id }, { $set: { deleted: true } });
     return { success: true, message: 'پلن VIP با موفقیت حذف شد.' };
   }
 
@@ -74,10 +69,10 @@ export class VipPlansService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.vipPlanModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.vipPlanModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }
-

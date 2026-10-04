@@ -30,13 +30,13 @@ export class SeedService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
+    if (process.env.RUN_SEED_ON_START !== 'true') return;
     await this.seedAll();
   }
 
   async seedAll() {
     this.logger.log('Checking database seeding and integrity status...');
     try {
-      await this.seedUsers();
       await this.seedBrands();
       await this.seedCategories();
       await this.seedAttributes();
@@ -45,167 +45,43 @@ export class SeedService implements OnApplicationBootstrap {
       await this.seedVipPlans();
       await this.seedCoupons();
       await this.seedPageSections();
-      this.logger.log('Database seeding & account restoration completed successfully! 🌿✨');
+      this.logger.log('Catalog data seeding completed successfully.');
     } catch (err: any) {
       this.logger.error(`Error during seeding: ${err.message}`, err.stack);
+      throw err;
     }
   }
 
-  // ====================================================================
-  // 1. Users (Admin, Editor, VIP, Regular) - Resurrection & Guaranteed Upsert
-  // ====================================================================
-  private async seedUsers() {
-    // A. Super Admin
-    const admin = await this.userModel.findOne({
-      $or: [
-        { username: 'admin' },
-        { phone: '09120000001' },
-        { email: 'admin@hatefaroma.com' },
-        { email: 'admin@gmial.com' },
-      ],
-    });
-    const adminPassword = await bcrypt.hash('Admin@123456', 10);
+  async seedInitialAdmin() {
+    const username = process.env.INITIAL_ADMIN_USERNAME?.trim().toLowerCase();
+    const email = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
+    const password = process.env.INITIAL_ADMIN_PASSWORD;
 
-    if (admin) {
-      admin.fullName = 'مدیر کل هاتف آروما';
-      admin.username = 'admin';
-      admin.email = 'admin@hatefaroma.com';
-      admin.phone = '09120000001';
-      admin.isEmailVerified = true;
-      admin.isPhoneVerified = true;
-      admin.password = adminPassword;
-      admin.role = UserRole.ADMIN;
-      admin.isVip = true;
-      admin.deleted = false;
-      await admin.save();
-      this.logger.log('✅ Admin user restored & verified: admin / Admin@123456 (phone: 09120000001)');
-    } else {
-      await this.userModel.create({
-        fullName: 'مدیر کل هاتف آروما',
-        username: 'admin',
-        email: 'admin@hatefaroma.com',
-        phone: '09120000001',
-        isEmailVerified: true,
-        isPhoneVerified: true,
-        password: adminPassword,
-        role: UserRole.ADMIN,
-        isVip: true,
-        deleted: false,
-      });
-      this.logger.log('✅ Admin user created: admin / Admin@123456 (phone: 09120000001)');
+    if (!username || !email || !password || password.length < 16) {
+      throw new Error('Set INITIAL_ADMIN_USERNAME, INITIAL_ADMIN_EMAIL, and a 16+ character INITIAL_ADMIN_PASSWORD.');
     }
 
-    // B. Editor
-    const editor = await this.userModel.findOne({
-      $or: [
-        { username: 'editor' },
-        { phone: '09120000002' },
-        { email: 'editor@hatefaroma.com' },
-      ],
-    });
-    const editorPassword = await bcrypt.hash('Editor@123456', 10);
-
-    if (editor) {
-      editor.fullName = 'ویراستار محصولات';
-      editor.username = 'editor';
-      editor.email = 'editor@hatefaroma.com';
-      editor.phone = '09120000002';
-      editor.isEmailVerified = true;
-      editor.isPhoneVerified = true;
-      editor.password = editorPassword;
-      editor.role = UserRole.EDITOR;
-      editor.deleted = false;
-      await editor.save();
-      this.logger.log('✅ Editor user restored & verified: editor / Editor@123456');
-    } else {
-      await this.userModel.create({
-        fullName: 'ویراستار محصولات',
-        username: 'editor',
-        email: 'editor@hatefaroma.com',
-        phone: '09120000002',
-        isEmailVerified: true,
-        isPhoneVerified: true,
-        password: editorPassword,
-        role: UserRole.EDITOR,
-        isVip: false,
-        deleted: false,
-      });
-      this.logger.log('✅ Editor user created: editor / Editor@123456');
+    const existingAdmin = await this.userModel.findOne({
+      $or: [{ username }, { email }],
+    }).exec();
+    if (existingAdmin) {
+      throw new Error('An account with the configured initial admin username or email already exists.');
     }
 
-    // C. VIP User
-    const vip = await this.userModel.findOne({
-      $or: [
-        { username: 'vipuser' },
-        { phone: '09120000003' },
-        { email: 'vip@hatefaroma.com' },
-        { email: 'vip@gmail.com' },
-      ],
+    const passwordHash = await bcrypt.hash(password, 12);
+    await this.userModel.create({
+      fullName: 'مدیر سایت',
+      username,
+      email,
+      password: passwordHash,
+      role: UserRole.ADMIN,
+      isEmailVerified: true,
+      isPhoneVerified: false,
+      isVip: false,
+      deleted: false,
     });
-    const vipPassword = await bcrypt.hash('Vip@123456', 10);
-    const vipExpires = new Date();
-    vipExpires.setDate(vipExpires.getDate() + 365);
 
-    if (vip) {
-      vip.fullName = 'کاربر طلایی هاتف آروما';
-      vip.username = 'vipuser';
-      vip.email = 'vip@hatefaroma.com';
-      vip.phone = '09120000003';
-      vip.password = vipPassword;
-      vip.role = UserRole.USER;
-      vip.isVip = true;
-      vip.vipExpiresAt = vipExpires;
-      vip.deleted = false;
-      await vip.save();
-      this.logger.log('✅ VIP user restored & verified: vipuser / Vip@123456');
-    } else {
-      await this.userModel.create({
-        fullName: 'کاربر طلایی هاتف آروما',
-        username: 'vipuser',
-        email: 'vip@hatefaroma.com',
-        phone: '09120000003',
-        password: vipPassword,
-        role: UserRole.USER,
-        isVip: true,
-        vipExpiresAt: vipExpires,
-        deleted: false,
-      });
-      this.logger.log('✅ VIP user created: vipuser / Vip@123456');
-    }
-
-    // D. Normal User
-    const regular = await this.userModel.findOne({
-      $or: [
-        { username: 'normaluser' },
-        { phone: '09120000004' },
-        { email: 'user@hatefaroma.com' },
-      ],
-    });
-    const regularPassword = await bcrypt.hash('User@123456', 10);
-
-    if (regular) {
-      regular.fullName = 'احسان مرتضوی';
-      regular.username = 'normaluser';
-      regular.email = 'user@hatefaroma.com';
-      regular.phone = '09120000004';
-      regular.password = regularPassword;
-      regular.role = UserRole.USER;
-      regular.deleted = false;
-      await regular.save();
-      this.logger.log('✅ Regular user restored & verified: normaluser / User@123456');
-    } else {
-      await this.userModel.create({
-        fullName: 'احسان مرتضوی',
-        username: 'normaluser',
-        email: 'user@hatefaroma.com',
-        phone: '09120000004',
-        password: regularPassword,
-        role: UserRole.USER,
-        isVip: false,
-        deleted: false,
-      });
-      this.logger.log('✅ Regular user created: normaluser / User@123456');
-    }
+    this.logger.log(`Initial administrator created for username: ${username}`);
   }
 
   // ====================================================================

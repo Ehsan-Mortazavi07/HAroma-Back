@@ -1,19 +1,15 @@
-import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Attribute, AttributeDocument } from './schemas/attribute.schema';
 import { CreateAttributeDto, QuickCreateAttributeDto, UpdateAttributeDto } from './dtos';
+import { normalizeSearchQuery } from '../common/utils/search.util';
 
 @Injectable()
-export class AttributesService implements OnModuleInit {
+export class AttributesService {
   constructor(
     @InjectModel(Attribute.name) private attributeModel: Model<AttributeDocument>,
   ) {}
-
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.attributeModel.deleteMany({ deleted: true }).catch(() => {});
-  }
 
   async create(createDto: CreateAttributeDto): Promise<AttributeDocument> {
     const key = createDto.key.toLowerCase().trim().replace(/[\s-]+/g, '_');
@@ -62,11 +58,12 @@ export class AttributesService implements OnModuleInit {
 
   async findAll(query?: { q?: string }) {
     const filter: any = { deleted: false };
-    if (query?.q) {
+    const searchQuery = normalizeSearchQuery(query?.q, 100);
+    if (searchQuery) {
       filter.$or = [
-        { name: { $regex: query.q, $options: 'i' } },
-        { nameEn: { $regex: query.q, $options: 'i' } },
-        { key: { $regex: query.q, $options: 'i' } },
+        { name: { $regex: searchQuery, $options: 'i' } },
+        { nameEn: { $regex: searchQuery, $options: 'i' } },
+        { key: { $regex: searchQuery, $options: 'i' } },
       ];
     }
     return this.attributeModel.find(filter).sort({ createdAt: 1 }).exec();
@@ -119,7 +116,7 @@ export class AttributesService implements OnModuleInit {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const attribute = await this.findById(id);
-    await this.attributeModel.deleteOne({ _id: attribute._id });
+    await this.attributeModel.updateOne({ _id: attribute._id }, { $set: { deleted: true } });
     return { success: true, message: 'ویژگی با موفقیت حذف شد.' };
   }
 
@@ -127,9 +124,10 @@ export class AttributesService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.attributeModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.attributeModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }

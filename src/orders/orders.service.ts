@@ -2,8 +2,9 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  OnModuleInit,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Order, OrderDocument } from './schemas/order.schema';
@@ -12,9 +13,11 @@ import { CouponsService } from '../coupons/coupons.service';
 import { UsersService } from '../users/users.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { OrderStatus, PaymentMethod } from '../common/enums';
+import { normalizeSearchQuery } from '../common/utils/search.util';
+import { parsePage, parsePageSize } from '../common/utils/pagination.util';
 
 @Injectable()
-export class OrdersService implements OnModuleInit {
+export class OrdersService {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
@@ -22,56 +25,67 @@ export class OrdersService implements OnModuleInit {
     private usersService: UsersService,
   ) {}
 
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.orderModel.deleteMany({ deleted: true }).catch(() => {});
-  }
-
   async create(userId: string, createOrderDto: CreateOrderDto): Promise<OrderDocument> {
     if (!createOrderDto.items || createOrderDto.items.length === 0) {
       throw new BadRequestException('سبد خرید نمی‌تواند خالی باشد.');
     }
 
+    // Payment gateways are not integrated yet; never mark an unpaid online order as processing.
+    if (createOrderDto.paymentMethod && createOrderDto.paymentMethod !== PaymentMethod.COD) {
+      throw new ServiceUnavailableException('این روش پرداخت هنوز فعال نشده است.');
+    }
+
     const user = await this.usersService.findById(userId);
 
-    let subtotal = 0;
-    const processedItems = [];
+    const productIds = [...new Set(createOrderDto.items.map((item) => item.product))];
+    const products = await this.productModel
+      .find({ _id: { $in: productIds }, deleted: false, isPublished: { $ne: false } })
+      .select('_id title price discountPrice images stockCount inStock variants deleted isPublished')
+      .exec();
+    const productsById = new Map(products.map((product) => [String(product._id), product]));
 
-    for (const item of createOrderDto.items) {
-      const product = await this.productModel.findOne({
-        _id: item.product,
-        deleted: false,
-      });
+    let subtotal = 0;
+    const processedItems = createOrderDto.items.map((item) => {
+      const product = productsById.get(item.product);
       if (!product) {
-        throw new BadRequestException(`محصول ${item.title} دیگر موجود نمی‌باشد.`);
+        throw new BadRequestException('یکی از کالاهای سبد خرید دیگر در دسترس نیست.');
       }
 
-      const itemPrice =
-        product.discountPrice && product.discountPrice > 0
-          ? product.discountPrice
-          : product.price;
+      const variant = item.variantId
+        ? product.variants?.find((candidate) => candidate.id === item.variantId)
+        : undefined;
+      if (item.variantId && !variant) {
+        throw new BadRequestException('ویژگی انتخاب‌شده برای یکی از کالاها معتبر نیست.');
+      }
 
-      subtotal += itemPrice * item.quantity;
+      const inventory = variant || product;
+      if (!inventory.inStock || inventory.stockCount < 0) {
+        throw new BadRequestException('یکی از کالاهای سبد خرید موجود نیست.');
+      }
+      const price = inventory.discountPrice && inventory.discountPrice > 0
+        ? inventory.discountPrice
+        : inventory.price;
+      if (!Number.isSafeInteger(price) || price < 0) {
+        throw new BadRequestException('قیمت یکی از کالاها معتبر نیست.');
+      }
 
-      processedItems.push({
+      subtotal += price * item.quantity;
+      if (!Number.isSafeInteger(subtotal)) {
+        throw new BadRequestException('مبلغ سفارش از حد مجاز بیشتر است.');
+      }
+      const variantTitle = variant?.title || '';
+      return {
         product: product._id,
-        title: product.title,
-        price: itemPrice,
+        title: variantTitle ? `${product.title} (${variantTitle})` : product.title,
+        price,
         quantity: item.quantity,
-        image:
-          item.image ||
-          (product.images && product.images.length > 0 ? product.images[0] : ''),
-        selectedAttributes: item.selectedAttributes || '',
-      });
+        image: product.images?.[0] || '',
+        selectedAttributes: variantTitle || item.selectedAttributes || '',
+        variantId: variant?.id || '',
+      };
+    });
 
-      // Update product sales and stock
-      await this.productModel.updateOne(
-        { _id: product._id },
-        {
-          $inc: { salesCount: item.quantity, stockCount: -item.quantity },
-        },
-      );
-    }
+    const stockDeltas = this.sumOrderItemQuantities(processedItems);
 
     // Free shipping threshold: 1,000,000 Tomans
     const shippingFee = subtotal >= 1000000 ? 0 : 45000;
@@ -79,18 +93,16 @@ export class OrdersService implements OnModuleInit {
     // Calculate coupon discount
     let couponDiscount = 0;
     let validCouponCode = '';
-    if (createOrderDto.couponCode) {
-      try {
-        const couponRes = await this.couponsService.validateCoupon({
-          code: createOrderDto.couponCode,
-          cartAmount: subtotal,
-        });
-        couponDiscount = couponRes.discountAmount;
-        validCouponCode = couponRes.code;
-        await this.couponsService.incrementUsage(validCouponCode);
-      } catch (e) {
-        // invalid coupon ignored or warning
-      }
+    let couponReserved = false;
+    if (createOrderDto.couponCode?.trim()) {
+      const couponRes = await this.couponsService.validateCoupon({
+        code: createOrderDto.couponCode,
+        cartAmount: subtotal,
+      });
+      couponDiscount = couponRes.discountAmount;
+      validCouponCode = couponRes.code;
+      await this.couponsService.reserveUsage(validCouponCode);
+      couponReserved = true;
     }
 
     // VIP Discount (5% extra discount for active VIP users)
@@ -101,14 +113,14 @@ export class OrdersService implements OnModuleInit {
 
     const total = Math.max(0, subtotal - couponDiscount - vipDiscount + shippingFee);
 
-    const orderNumber = `HA-${Math.floor(100000 + Math.random() * 900000)}`;
+    const orderNumber = `HA-${randomInt(100000, 1_000_000)}`;
 
     const order = new this.orderModel({
       orderNumber,
       user: new Types.ObjectId(userId),
       items: processedItems,
       deliveryAddress: createOrderDto.deliveryAddress,
-      paymentMethod: createOrderDto.paymentMethod || PaymentMethod.ONLINE,
+      paymentMethod: PaymentMethod.COD,
       subtotal,
       shippingFee,
       couponDiscount,
@@ -121,7 +133,57 @@ export class OrdersService implements OnModuleInit {
       notes: createOrderDto.notes || '',
     });
 
-    const savedOrder = await order.save();
+    const appliedInventoryChanges: Array<{ key: string; quantity: number }> = [];
+    let savedOrder: OrderDocument;
+    try {
+      for (const [key, quantity] of stockDeltas) {
+        const separatorIndex = key.indexOf(':');
+        const productId = key.slice(0, separatorIndex);
+        const variantId = key.slice(separatorIndex + 1);
+        const product = productsById.get(productId);
+        if (!product) throw new BadRequestException('یکی از کالاهای سفارش دیگر در دسترس نیست.');
+
+        const filter: Record<string, unknown> = {
+          _id: product._id,
+          deleted: false,
+          isPublished: { $ne: false },
+          inStock: true,
+        };
+        const update: Record<string, unknown> = {
+          $inc: { salesCount: quantity },
+        };
+        const options: Record<string, unknown> = {};
+        if (variantId) {
+          filter.variants = {
+            $elemMatch: { id: variantId, inStock: true, stockCount: { $gte: quantity } },
+          };
+          update.$inc = { salesCount: quantity, 'variants.$[variant].stockCount': -quantity };
+          options.arrayFilters = [{ 'variant.id': variantId, 'variant.inStock': true, 'variant.stockCount': { $gte: quantity } }];
+        } else {
+          filter.stockCount = { $gte: quantity };
+          update.$inc = { salesCount: quantity, stockCount: -quantity };
+        }
+
+        const result = await this.productModel.updateOne(filter, update, options).exec();
+        if (result.modifiedCount !== 1) {
+          throw new BadRequestException('موجودی یکی از کالاها برای تعداد انتخاب‌شده کافی نیست.');
+        }
+        appliedInventoryChanges.push({ key, quantity });
+      }
+
+      savedOrder = await order.save();
+    } catch (error) {
+      await Promise.all(appliedInventoryChanges.map(({ key, quantity }) =>
+        this.adjustInventoryForOrderItem(key, -quantity).catch(() => undefined),
+      ));
+      if (couponReserved) {
+        await this.couponsService.releaseUsage(validCouponCode).catch(() => undefined);
+      }
+      if ((error as { code?: number })?.code === 11000) {
+        throw new BadRequestException('خطایی در ثبت سفارش رخ داد؛ دوباره تلاش کنید.');
+      }
+      throw error;
+    }
 
     // If user profile does not have address/city saved yet, auto-populate from this purchase
     if ((!user.address || !user.city) && createOrderDto.deliveryAddress) {
@@ -154,6 +216,17 @@ export class OrdersService implements OnModuleInit {
       .exec();
   }
 
+  async findUserOrderById(id: string, userId: string): Promise<OrderDocument> {
+    if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(userId)) {
+      throw new NotFoundException('سفارش مورد نظر یافت نشد.');
+    }
+    const order = await this.orderModel
+      .findOne({ _id: id, user: new Types.ObjectId(userId), deleted: false })
+      .exec();
+    if (!order) throw new NotFoundException('سفارش مورد نظر یافت نشد.');
+    return order;
+  }
+
   async findById(id: string, includeAdminChangeNotes = false): Promise<OrderDocument> {
     const query = this.orderModel
       .findOne({ _id: id, deleted: false })
@@ -176,10 +249,12 @@ export class OrdersService implements OnModuleInit {
     return order.adminChangeNotes || [];
   }
 
-  async findByOrderNumber(orderNumber: string): Promise<OrderDocument> {
+  async findByOrderNumber(orderNumber: string, userId: string): Promise<OrderDocument> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new NotFoundException('سفارش مورد نظر یافت نشد.');
+    }
     const order = await this.orderModel
-      .findOne({ orderNumber, deleted: false })
-      .populate('user', 'fullName username email phone')
+      .findOne({ orderNumber, user: new Types.ObjectId(userId), deleted: false })
       .exec();
 
     if (!order) {
@@ -195,8 +270,8 @@ export class OrdersService implements OnModuleInit {
     q?: string;
     userId?: string;
   }) {
-    const page = Math.max(1, Number(query?.page) || 1);
-    const pageSize = Math.max(1, Number(query?.pageSize) || 20);
+    const page = parsePage(query?.page);
+    const pageSize = parsePageSize(query?.pageSize);
     const skip = (page - 1) * pageSize;
 
     const filter: any = { deleted: false };
@@ -206,11 +281,12 @@ export class OrdersService implements OnModuleInit {
     if (query?.userId && Types.ObjectId.isValid(query.userId)) {
       filter.user = new Types.ObjectId(query.userId);
     }
-    if (query?.q) {
+    const searchQuery = normalizeSearchQuery(query?.q, 100);
+    if (searchQuery) {
       filter.$or = [
-        { orderNumber: { $regex: query.q, $options: 'i' } },
-        { 'deliveryAddress.fullName': { $regex: query.q, $options: 'i' } },
-        { 'deliveryAddress.phone': { $regex: query.q, $options: 'i' } },
+        { orderNumber: { $regex: searchQuery, $options: 'i' } },
+        { 'deliveryAddress.fullName': { $regex: searchQuery, $options: 'i' } },
+        { 'deliveryAddress.phone': { $regex: searchQuery, $options: 'i' } },
       ];
     }
 
@@ -328,7 +404,7 @@ export class OrdersService implements OnModuleInit {
 
     const addedItems = addItems.map((item) => {
       const product = productsById.get(item.productId);
-      if (!product || product.deleted || product.isPublished === false || !product.inStock) {
+      if (!product || product.deleted || product.isPublished === false) {
         throw new BadRequestException('یکی از کالاهای انتخاب‌شده در دسترس نیست.');
       }
 
@@ -339,12 +415,18 @@ export class OrdersService implements OnModuleInit {
         throw new BadRequestException('ویژگی انتخاب‌شده برای یکی از کالاها معتبر نیست.');
       }
       const priceSource = variant || product;
+      if (!priceSource.inStock || priceSource.stockCount < 0) {
+        throw new BadRequestException('یکی از کالاهای انتخاب‌شده موجود نیست.');
+      }
       const price = priceSource.discountPrice && priceSource.discountPrice > 0
         ? priceSource.discountPrice
         : priceSource.price;
+      if (!Number.isSafeInteger(price) || price < 0) {
+        throw new BadRequestException('قیمت یکی از کالاها معتبر نیست.');
+      }
       return {
         product: new Types.ObjectId(item.productId),
-        title: product.title,
+        title: variant ? `${product.title} (${variant.title})` : product.title,
         price,
         quantity: item.quantity,
         image: product.images?.[0] || '',
@@ -359,21 +441,22 @@ export class OrdersService implements OnModuleInit {
 
     const oldQuantities = this.sumOrderItemQuantities(existingItems);
     const newQuantities = this.sumOrderItemQuantities(nextItems);
-    const productIds = [...new Set([...oldQuantities.keys(), ...newQuantities.keys()])];
+    const inventoryKeys = [...new Set([...oldQuantities.keys(), ...newQuantities.keys()])];
+    const productIds = [...new Set(inventoryKeys.map((key) => key.slice(0, key.indexOf(':'))))];
     if (productIds.some((productId) => !Types.ObjectId.isValid(productId))) {
       throw new BadRequestException('شناسه یکی از محصولات سفارش نامعتبر است.');
     }
     const inventoryProducts = productIds.length
       ? await this.productModel
-          .find({ _id: { $in: productIds }, deleted: false })
-          .select('_id deleted stockCount')
+          .find({ _id: { $in: productIds } })
+          .select('_id deleted isPublished inStock stockCount variants')
           .lean()
           .exec()
       : [];
     const inventoryProductsById = new Map(inventoryProducts.map((product) => [String(product._id), product]));
-    const quantityDeltas = new Map(productIds.map((productId) => [
-      productId,
-      (newQuantities.get(productId) || 0) - (oldQuantities.get(productId) || 0),
+    const quantityDeltas = new Map(inventoryKeys.map((key) => [
+      key,
+      (newQuantities.get(key) || 0) - (oldQuantities.get(key) || 0),
     ]));
 
     const subtotal = nextItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -399,25 +482,53 @@ export class OrdersService implements OnModuleInit {
         }
       : null;
 
-    const appliedInventoryChanges: Array<{ productId: string; delta: number }> = [];
+    const appliedInventoryChanges: Array<{ key: string; delta: number }> = [];
     try {
       if (hasItemChanges) {
-        for (const [productId, delta] of quantityDeltas) {
+        for (const [key, delta] of quantityDeltas) {
           if (delta === 0) continue;
+          const separatorIndex = key.indexOf(':');
+          const productId = key.slice(0, separatorIndex);
+          const variantId = key.slice(separatorIndex + 1);
           const product = inventoryProductsById.get(productId);
-          if (!product) continue;
+          if (!product) {
+            if (delta > 0) throw new BadRequestException('یکی از کالاهای سفارش دیگر در دسترس نیست.');
+            continue;
+          }
 
-          const filter: Record<string, unknown> = { _id: product._id, deleted: false };
-          if (delta > 0) filter.stockCount = { $gte: delta };
-          const result = await this.productModel.updateOne(filter, {
-            $inc: { stockCount: -delta, salesCount: delta },
-          }).exec();
+          const filter: Record<string, unknown> = { _id: product._id };
+          const update: Record<string, unknown> = { $inc: { salesCount: delta } };
+          const options: Record<string, unknown> = {};
+          if (variantId) {
+            const variant = product.variants?.find((candidate) => candidate.id === variantId);
+            if (!variant) {
+              if (delta > 0) throw new BadRequestException('واریانت یکی از کالاهای سفارش دیگر در دسترس نیست.');
+              continue;
+            }
+            if (delta > 0) {
+              if (product.deleted || product.isPublished === false || !variant.inStock) {
+                throw new BadRequestException('یکی از کالاهای سفارش دیگر در دسترس نیست.');
+              }
+              filter.variants = { $elemMatch: { id: variantId, inStock: true, stockCount: { $gte: delta } } };
+            }
+            update.$inc = { salesCount: delta, 'variants.$[variant].stockCount': -delta };
+            options.arrayFilters = [{ 'variant.id': variantId }];
+          } else {
+            if (delta > 0) {
+              if (product.deleted || product.isPublished === false || !product.inStock) {
+                throw new BadRequestException('یکی از کالاهای سفارش دیگر در دسترس نیست.');
+              }
+              filter.stockCount = { $gte: delta };
+            }
+            update.$inc = { salesCount: delta, stockCount: -delta };
+          }
+          const result = await this.productModel.updateOne(filter, update, options).exec();
           if (result.modifiedCount !== 1) {
             throw new BadRequestException(delta > 0
               ? 'موجودی یکی از کالاها برای این تعداد کافی نیست.'
               : 'موجودی یکی از کالاها هم‌زمان تغییر کرده است؛ دوباره تلاش کنید.');
           }
-          appliedInventoryChanges.push({ productId, delta });
+          appliedInventoryChanges.push({ key, delta });
         }
       }
 
@@ -446,11 +557,8 @@ export class OrdersService implements OnModuleInit {
         throw new BadRequestException('این سفارش هم‌زمان تغییر کرده است؛ صفحه را تازه کنید و دوباره تلاش کنید.');
       }
     } catch (error) {
-      await Promise.all(appliedInventoryChanges.map(({ productId, delta }) =>
-        this.productModel.updateOne(
-          { _id: new Types.ObjectId(productId) },
-          { $inc: { stockCount: delta, salesCount: -delta } },
-        ).exec().catch(() => undefined),
+      await Promise.all(appliedInventoryChanges.map(({ key, delta }) =>
+        this.adjustInventoryForOrderItem(key, -delta).catch(() => undefined),
       ));
       if ((error as { code?: number })?.code === 11000) {
         throw new BadRequestException('شماره سفارش تکراری است.');
@@ -460,13 +568,31 @@ export class OrdersService implements OnModuleInit {
     return this.findById(id, true);
   }
 
-  private sumOrderItemQuantities(items: Array<{ product: Types.ObjectId | string; quantity: number }>) {
+  private sumOrderItemQuantities(items: Array<{ product: Types.ObjectId | string; quantity: number; variantId?: string }>) {
     const totals = new Map<string, number>();
     for (const item of items) {
-      const productId = String(item.product);
-      totals.set(productId, (totals.get(productId) || 0) + item.quantity);
+      const key = `${String(item.product)}:${item.variantId || ''}`;
+      totals.set(key, (totals.get(key) || 0) + item.quantity);
     }
     return totals;
+  }
+
+  private async adjustInventoryForOrderItem(key: string, quantityDelta: number): Promise<void> {
+    const separatorIndex = key.indexOf(':');
+    const productId = key.slice(0, separatorIndex);
+    const variantId = key.slice(separatorIndex + 1);
+    if (variantId) {
+      await this.productModel.updateOne(
+        { _id: new Types.ObjectId(productId) },
+        { $inc: { salesCount: quantityDelta, 'variants.$[variant].stockCount': -quantityDelta } },
+        { arrayFilters: [{ 'variant.id': variantId }] },
+      ).exec();
+      return;
+    }
+    await this.productModel.updateOne(
+      { _id: new Types.ObjectId(productId) },
+      { $inc: { salesCount: quantityDelta, stockCount: -quantityDelta } },
+    ).exec();
   }
 
   async bulkUpdateStatus(
@@ -512,7 +638,7 @@ export class OrdersService implements OnModuleInit {
 
   async deleteOne(id: string): Promise<{ success: boolean; message: string }> {
     const order = await this.findById(id);
-    await this.orderModel.deleteOne({ _id: order._id });
+    await this.orderModel.updateOne({ _id: order._id }, { $set: { deleted: true } });
     return { success: true, message: 'سفارش با موفقیت حذف شد.' };
   }
 
@@ -520,10 +646,11 @@ export class OrdersService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.orderModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.orderModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 
   async getDashboardStats() {

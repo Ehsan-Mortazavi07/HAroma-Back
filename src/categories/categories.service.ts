@@ -1,19 +1,15 @@
-import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
 import { CreateCategoryDto, UpdateCategoryDto } from './dtos';
+import { normalizeSearchQuery } from '../common/utils/search.util';
 
 @Injectable()
-export class CategoriesService implements OnModuleInit {
+export class CategoriesService {
   constructor(
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
   ) {}
-
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.categoryModel.deleteMany({ deleted: true }).catch(() => {});
-  }
 
   async create(createCategoryDto: CreateCategoryDto): Promise<CategoryDocument> {
     const existing = await this.categoryModel.findOne({
@@ -42,11 +38,12 @@ export class CategoriesService implements OnModuleInit {
     if (!query?.includeInactive) {
       filter.isActive = { $ne: false };
     }
-    if (query?.q) {
+    const searchQuery = normalizeSearchQuery(query?.q, 100);
+    if (searchQuery) {
       filter.$or = [
-        { name: { $regex: query.q, $options: 'i' } },
-        { nameEn: { $regex: query.q, $options: 'i' } },
-        { slug: { $regex: query.q, $options: 'i' } },
+        { name: { $regex: searchQuery, $options: 'i' } },
+        { nameEn: { $regex: searchQuery, $options: 'i' } },
+        { slug: { $regex: searchQuery, $options: 'i' } },
       ];
     }
     if (query?.featuredOnly) {
@@ -123,7 +120,7 @@ export class CategoriesService implements OnModuleInit {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const category = await this.findById(id);
-    await this.categoryModel.deleteOne({ _id: category._id });
+    await this.categoryModel.updateOne({ _id: category._id }, { $set: { deleted: true } });
     return { success: true, message: 'دسته‌بندی با موفقیت حذف شد.' };
   }
 
@@ -145,9 +142,10 @@ export class CategoriesService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.categoryModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.categoryModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }

@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums';
+import { BulkIdsDto, BulkSetActiveDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class CategoriesController {
@@ -49,18 +50,15 @@ export class CategoriesController {
   @Patch('admin/categories/bulk/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
-  async adminBulkUpdateStatus(
-    @Body('ids') ids: string[],
-    @Body('isActive') isActive: boolean,
-  ) {
-    return this.categoriesService.bulkUpdateStatus(ids, isActive);
+  async adminBulkUpdateStatus(@Body() dto: BulkSetActiveDto) {
+    return this.categoriesService.bulkUpdateStatus(dto.ids, dto.isActive);
   }
 
   @Post('admin/categories/bulk/delete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async adminBulkDelete(@Body('ids') ids: string[]) {
-    return this.categoriesService.bulkSoftDelete(ids);
+  async adminBulkDelete(@Body() dto: BulkIdsDto) {
+    return this.categoriesService.bulkSoftDelete(dto.ids);
   }
 
   @Get('admin/categories/:id')

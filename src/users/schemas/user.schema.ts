@@ -77,6 +77,9 @@ export class User {
   @Prop({ required: false, default: '' })
   password?: string;
 
+  @Prop({ default: 0, min: 0 })
+  tokenVersion!: number;
+
   @Prop({ type: String, enum: UserRole, default: UserRole.USER })
   role!: UserRole;
 
@@ -164,6 +167,7 @@ UserSchema.set('toJSON', {
   transform: (doc, ret) => {
     ret.hasPassword = Boolean(ret.password && ret.password.trim());
     delete ret.password;
+    delete ret.tokenVersion;
     return ret;
   },
 });
@@ -173,6 +177,7 @@ UserSchema.set('toObject', {
   transform: (doc, ret) => {
     ret.hasPassword = Boolean(ret.password && ret.password.trim());
     delete ret.password;
+    delete ret.tokenVersion;
     return ret;
   },
 });

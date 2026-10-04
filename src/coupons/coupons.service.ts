@@ -3,23 +3,18 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Coupon, CouponDocument } from './schemas/coupon.schema';
 import { CreateCouponDto, ValidateCouponDto } from './dtos';
+import { normalizeSearchQuery } from '../common/utils/search.util';
 
 @Injectable()
-export class CouponsService implements OnModuleInit {
+export class CouponsService {
   constructor(
     @InjectModel(Coupon.name) private couponModel: Model<CouponDocument>,
   ) {}
-
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.couponModel.deleteMany({ deleted: true }).catch(() => {});
-  }
 
   async create(createCouponDto: CreateCouponDto): Promise<CouponDocument> {
     const code = createCouponDto.code.toUpperCase().trim();
@@ -37,8 +32,9 @@ export class CouponsService implements OnModuleInit {
 
   async findAll(query?: { q?: string }) {
     const filter: any = { deleted: false };
-    if (query?.q) {
-      filter.code = { $regex: query.q, $options: 'i' };
+    const searchQuery = normalizeSearchQuery(query?.q, 100);
+    if (searchQuery) {
+      filter.code = { $regex: searchQuery, $options: 'i' };
     }
     return this.couponModel.find(filter).sort({ createdAt: -1 }).exec();
   }
@@ -97,11 +93,28 @@ export class CouponsService implements OnModuleInit {
     };
   }
 
-  async incrementUsage(code: string) {
-    await this.couponModel.updateOne(
-      { code: code.toUpperCase().trim(), deleted: false },
+  async reserveUsage(code: string): Promise<void> {
+    const now = new Date();
+    const result = await this.couponModel.updateOne(
+      {
+        code: code.toUpperCase().trim(),
+        deleted: false,
+        isActive: true,
+        $expr: { $lt: ['$usedCount', '$usageLimit'] },
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+      },
       { $inc: { usedCount: 1 } },
-    );
+    ).exec();
+    if (result.modifiedCount !== 1) {
+      throw new BadRequestException('این کد تخفیف دیگر قابل استفاده نیست.');
+    }
+  }
+
+  async releaseUsage(code: string): Promise<void> {
+    await this.couponModel.updateOne(
+      { code: code.toUpperCase().trim(), usedCount: { $gt: 0 } },
+      { $inc: { usedCount: -1 } },
+    ).exec();
   }
 
   async update(id: string, updateCouponDto: Partial<CreateCouponDto>): Promise<CouponDocument> {
@@ -123,7 +136,7 @@ export class CouponsService implements OnModuleInit {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const coupon = await this.findById(id);
-    await this.couponModel.deleteOne({ _id: coupon._id });
+    await this.couponModel.updateOne({ _id: coupon._id }, { $set: { deleted: true } });
     return { success: true, message: 'کد تخفیف با موفقیت حذف شد.' };
   }
 
@@ -145,9 +158,10 @@ export class CouponsService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.couponModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.couponModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }

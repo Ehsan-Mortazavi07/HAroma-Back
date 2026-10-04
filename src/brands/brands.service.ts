@@ -1,19 +1,15 @@
-import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Brand, BrandDocument } from './schemas/brand.schema';
 import { CreateBrandDto, UpdateBrandDto } from './dtos';
+import { normalizeSearchQuery } from '../common/utils/search.util';
 
 @Injectable()
-export class BrandsService implements OnModuleInit {
+export class BrandsService {
   constructor(
     @InjectModel(Brand.name) private brandModel: Model<BrandDocument>,
   ) {}
-
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.brandModel.deleteMany({ deleted: true }).catch(() => {});
-  }
 
   async create(createBrandDto: CreateBrandDto): Promise<BrandDocument> {
     const existing = await this.brandModel.findOne({
@@ -36,11 +32,12 @@ export class BrandsService implements OnModuleInit {
     if (!query?.includeInactive) {
       filter.isActive = { $ne: false };
     }
-    if (query?.q) {
+    const searchQuery = normalizeSearchQuery(query?.q, 100);
+    if (searchQuery) {
       filter.$or = [
-        { name: { $regex: query.q, $options: 'i' } },
-        { nameEn: { $regex: query.q, $options: 'i' } },
-        { slug: { $regex: query.q, $options: 'i' } },
+        { name: { $regex: searchQuery, $options: 'i' } },
+        { nameEn: { $regex: searchQuery, $options: 'i' } },
+        { slug: { $regex: searchQuery, $options: 'i' } },
       ];
     }
     if (query?.featuredOnly) {
@@ -95,7 +92,7 @@ export class BrandsService implements OnModuleInit {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const brand = await this.findById(id);
-    await this.brandModel.deleteOne({ _id: brand._id });
+    await this.brandModel.updateOne({ _id: brand._id }, { $set: { deleted: true } });
     return { success: true, message: 'برند با موفقیت حذف گردید.' };
   }
 
@@ -117,9 +114,10 @@ export class BrandsService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.brandModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.brandModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }

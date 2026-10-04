@@ -25,5 +25,4 @@ export class Attribute {
 }
 
 export const AttributeSchema = SchemaFactory.createForClass(Attribute);
-AttributeSchema.index({ key: 1 });
 AttributeSchema.index({ deleted: 1 });

@@ -75,6 +75,5 @@ export class PageSection {
 }
 
 export const PageSectionSchema = SchemaFactory.createForClass(PageSection);
-PageSectionSchema.index({ sectionKey: 1 });
 PageSectionSchema.index({ order: 1 });
 PageSectionSchema.index({ isVisible: 1 });

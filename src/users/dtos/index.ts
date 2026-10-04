@@ -10,16 +10,19 @@ import {
   IsPhoneNumber,
   Matches,
   ValidateIf,
+  MaxLength,
 } from 'class-validator';
 import { UserRole } from '../../common/enums';
 
 export class CreateUserDto {
   @IsNotEmpty({ message: 'نام و نام خانوادگی الزامی است.' })
   @IsString()
+  @MaxLength(120)
   fullName!: string;
 
   @IsNotEmpty({ message: 'نام کاربری الزامی است.' })
   @IsString()
+  @MaxLength(64)
   username!: string;
 
   @IsOptional()
@@ -37,7 +40,8 @@ export class CreateUserDto {
   @IsOptional()
   @ValidateIf((o, v) => v !== '' && v !== null && v !== undefined)
   @IsString()
-  @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })
+  @MinLength(12, { message: 'رمز عبور باید حداقل ۱۲ کاراکتر باشد.' })
+  @MaxLength(128)
   password?: string;
 
   @IsOptional()
@@ -113,10 +117,12 @@ export class CreateUserDto {
 export class UpdateUserDto {
   @IsOptional()
   @IsString()
+  @MaxLength(120)
   fullName?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   username?: string;
 
   @IsOptional()
@@ -133,11 +139,13 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   currentPassword?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(6, { message: 'رمز عبور باید حداقل ۶ کاراکتر باشد.' })
+  @MinLength(12, { message: 'رمز عبور باید حداقل ۱۲ کاراکتر باشد.' })
+  @MaxLength(128)
   password?: string;
 
   @IsOptional()

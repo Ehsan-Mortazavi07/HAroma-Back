@@ -1,20 +1,15 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { VariantTemplate, VariantTemplateDocument } from './schemas/variant-template.schema';
 import { CreateVariantTemplateDto, UpdateVariantTemplateDto } from './dtos';
 
 @Injectable()
-export class VariantTemplatesService implements OnModuleInit {
+export class VariantTemplatesService {
   constructor(
     @InjectModel(VariantTemplate.name)
     private variantTemplateModel: Model<VariantTemplateDocument>,
   ) {}
-
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.variantTemplateModel.deleteMany({ deleted: true }).catch(() => {});
-  }
 
   async findAll() {
     return this.variantTemplateModel
@@ -59,7 +54,7 @@ export class VariantTemplatesService implements OnModuleInit {
 
   async remove(id: string) {
     const template = await this.findOne(id);
-    await this.variantTemplateModel.deleteOne({ _id: template._id });
+    await this.variantTemplateModel.updateOne({ _id: template._id }, { $set: { deleted: true } });
     return { success: true, message: 'الگوی تنوع با موفقیت حذف شد.' };
   }
 
@@ -67,10 +62,10 @@ export class VariantTemplatesService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.variantTemplateModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.variantTemplateModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 }
-

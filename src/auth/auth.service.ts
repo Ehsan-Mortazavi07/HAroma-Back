@@ -16,6 +16,9 @@ import { LoginDto, RegisterDto } from './dtos';
 import { normalizePhoneNumber } from './utils/phone.util';
 import { UserRole } from '../common/enums';
 import { ensureUniqueAddressTitles } from '../users/address-title.util';
+import { ConfigService } from '@nestjs/config';
+import { createHmac, randomInt, timingSafeEqual } from 'crypto';
+import { ServiceUnavailableException } from '@nestjs/common';
 
 @Injectable()
 export class AuthService {
@@ -24,7 +27,45 @@ export class AuthService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private usersService: UsersService,
     private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
+
+  private normalizeOtpCode(code: string): string {
+    return code
+      .trim()
+      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+  }
+
+  private hashOtp(code: string, purpose: string, recipient: string): string {
+    return createHmac('sha256', this.configService.getOrThrow<string>('JWT_SECRET'))
+      .update(`${purpose}:${recipient}:${code}`)
+      .digest('hex');
+  }
+
+  private otpMatches(storedHash: string | undefined, code: string, purpose: string, recipient: string): boolean {
+    if (!storedHash || !/^[a-f\d]{64}$/i.test(storedHash)) return false;
+    const expectedHash = Buffer.from(this.hashOtp(code, purpose, recipient), 'hex');
+    const candidateHash = Buffer.from(storedHash, 'hex');
+    return candidateHash.length === expectedHash.length && timingSafeEqual(candidateHash, expectedHash);
+  }
+
+  private ensureOtpDeliveryIsAvailable(): void {
+    if (this.configService.get<string>('NODE_ENV') === 'production') {
+      throw new ServiceUnavailableException(
+        'ارسال کد یکبارمصرف تا پیکربندی ارائه‌دهنده پیامک و ایمیل در محیط production فعال نیست.',
+      );
+    }
+  }
+
+  private async recordOtpFailure(otpId: unknown, attempts: number): Promise<void> {
+    const update: Record<string, unknown> = { $inc: { attempts: 1 } };
+    if (attempts >= 4) update.$set = { used: true };
+    await this.otpModel.findOneAndUpdate(
+      { _id: otpId, used: false, attempts: { $lt: 5 } },
+      update,
+    ).exec();
+  }
 
   async login(loginDto: LoginDto) {
     const rawId = (loginDto.identifier || '').trim();
@@ -72,26 +113,22 @@ export class AuthService {
 
     // Requirement 4: If user doesn't exist
     if (!user) {
-      throw new UnauthorizedException('کاربری با این مشخصات وجود ندارد.');
+      throw new UnauthorizedException('نام کاربری یا رمز عبور نادرست است.');
     }
 
     // Requirement 2: Login with email requires isEmailVerified
     if (isEmailLike && !user.isEmailVerified) {
-      throw new UnauthorizedException(
-        'ورود با ایمیل امکان‌پذیر نیست زیرا ایمیل این حساب کاربری هنوز تایید نشده است. لطفاً با نام کاربری یا شماره موبایل وارد شوید.',
-      );
+      throw new UnauthorizedException('نام کاربری یا رمز عبور نادرست است.');
     }
 
     if (!user.password) {
-      throw new UnauthorizedException(
-        'برای این حساب کاربری رمز عبور ثبت نشده است. لطفاً با کد یکبار مصرف وارد شوید.',
-      );
+      throw new UnauthorizedException('نام کاربری یا رمز عبور نادرست است.');
     }
 
     // Requirement 4: If user exists but password is wrong
     const isMatch = await bcrypt.compare(loginDto.password, user.password);
     if (!isMatch) {
-      throw new UnauthorizedException('رمز عبور اشتباه است.');
+      throw new UnauthorizedException('نام کاربری یا رمز عبور نادرست است.');
     }
 
     const userObj = user.toObject();
@@ -105,6 +142,7 @@ export class AuthService {
       phone: userObj.phone || '',
       role: userObj.role,
       isVip: userObj.isVip,
+      tokenVersion: user.tokenVersion || 0,
     };
 
     return {
@@ -145,75 +183,36 @@ export class AuthService {
       );
     }
 
-    // Verify OTP code
-    const rawCode = (registerDto.code || '').trim();
-    if (!rawCode) {
+    const cleanCode = this.normalizeOtpCode(registerDto.code || '');
+    if (!/^\d{5}$/.test(cleanCode)) {
       throw new BadRequestException('کد تایید ۵ رقمی الزامی است.');
     }
-
-    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    let cleanCode = rawCode;
-    for (let i = 0; i < 10; i++) {
-      cleanCode = cleanCode.replace(new RegExp(persianDigits[i], 'g'), i.toString());
-      cleanCode = cleanCode.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
-    }
-
-    // Find valid OTP record: verified in Step 2 or matching code
-    let otpRecord = await this.otpModel
-      .findOne({
-        phone: cleanPhone,
-        used: false,
-        expiresAt: { $gt: new Date() },
-        $or: [
-          { isVerified: true },
-          { code: cleanCode },
-        ],
-      })
-      .sort({ createdAt: -1 });
-
-    if (!otpRecord) {
-      // Fallback check: any unexpired unused OTP for this phone
-      otpRecord = await this.otpModel
-        .findOne({
-          phone: cleanPhone,
-          used: false,
-          expiresAt: { $gt: new Date() },
-        })
-        .sort({ createdAt: -1 });
-    }
-
-    if (!otpRecord) {
-      // Fallback check 2: any OTP verified within the last 30 minutes for this phone
-      otpRecord = await this.otpModel
-        .findOne({
-          phone: cleanPhone,
-          isVerified: true,
-          updatedAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) },
-        })
-        .sort({ updatedAt: -1 });
-    }
+    const registrationOtpFilter = {
+      phone: cleanPhone,
+      purpose: 'register',
+      isVerified: true,
+      used: false,
+      expiresAt: { $gt: new Date() },
+    };
+    const otpRecord = await this.otpModel
+      .findOne(registrationOtpFilter)
+      .sort({ createdAt: -1 })
+      .select('+codeHash')
+      .exec();
 
     if (!otpRecord) {
       throw new BadRequestException('کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.');
     }
-
-    if (!otpRecord.isVerified && otpRecord.code !== cleanCode) {
-      if (otpRecord.attempts >= 5) {
-        otpRecord.used = true;
-        await otpRecord.save();
-        throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
-      }
-      otpRecord.attempts += 1;
-      await otpRecord.save();
+    if (!this.otpMatches(otpRecord.codeHash, cleanCode, 'register', cleanPhone)) {
+      await this.recordOtpFailure(otpRecord._id, otpRecord.attempts);
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
     // Check optional password
     const rawPassword = registerDto.password?.trim() || '';
     if (rawPassword) {
-      if (rawPassword.length < 6) {
-        throw new BadRequestException('رمز عبور باید حداقل ۶ کاراکتر باشد.');
+      if (rawPassword.length < 12) {
+        throw new BadRequestException('رمز عبور باید حداقل ۱۲ کاراکتر باشد.');
       }
       if (registerDto.confirmPassword && rawPassword !== registerDto.confirmPassword.trim()) {
         throw new BadRequestException('رمز عبور با تکرار آن مطابقت ندارد.');
@@ -240,6 +239,15 @@ export class AuthService {
       }
     }
 
+    const consumedOtp = await this.otpModel.findOneAndUpdate(
+      { ...registrationOtpFilter, _id: otpRecord._id, codeHash: otpRecord.codeHash },
+      { $set: { used: true } },
+      { new: true },
+    ).exec();
+    if (!consumedOtp) {
+      throw new BadRequestException('کد تایید منقضی یا قبلاً استفاده شده است. لطفاً مجدداً درخواست کد دهید.');
+    }
+
     const createdUser = await this.usersService.create({
       fullName: registerDto.fullName.trim(),
       username,
@@ -249,10 +257,6 @@ export class AuthService {
       birthDate: registerDto.birthDate,
       isPhoneVerified: true,
     } as any);
-
-    // Mark OTP code as used ONLY after user creation is successful!
-    otpRecord.used = true;
-    await otpRecord.save();
 
     const userObj = createdUser.toObject();
     userObj.hasPassword = Boolean(createdUser.password && createdUser.password.trim());
@@ -265,6 +269,7 @@ export class AuthService {
       phone: userObj.phone || cleanPhone,
       role: userObj.role,
       isVip: userObj.isVip,
+      tokenVersion: createdUser.tokenVersion || 0,
     };
 
     return {
@@ -276,6 +281,7 @@ export class AuthService {
   }
 
   async forgotPassword(identifier?: string, channel: 'sms' | 'email' = 'sms', authHeader?: string) {
+    this.ensureOtpDeliveryIsAvailable();
     let user: UserDocument | null = null;
 
     // 1. If authorization header is present, lock strictly to the logged-in user
@@ -302,7 +308,10 @@ export class AuthService {
       }
       user = await this.usersService.findByUsernameOrEmail(cleanId);
       if (!user) {
-        throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
+        return {
+          success: true,
+          message: 'اگر حساب کاربری با این مشخصات وجود داشته باشد، راهنمای بازیابی ارسال می‌شود.',
+        };
       }
     }
 
@@ -311,14 +320,20 @@ export class AuthService {
     let maskedDestination = '';
 
     if (selectedChannel === 'email') {
-      if (!user.email || !user.email.trim()) {
-        throw new BadRequestException('برای این حساب کاربری آدرس ایمیلی ثبت نشده است.');
+      if (!user.email || !user.email.trim() || !user.isEmailVerified) {
+        return {
+          success: true,
+          message: 'اگر حساب کاربری با این مشخصات وجود داشته باشد، راهنمای بازیابی ارسال می‌شود.',
+        };
       }
       targetDestination = user.email.trim().toLowerCase();
       maskedDestination = targetDestination.replace(/(.{2})(.*)(?=@)/, (gp1, gp2, gp3) => gp2 + '*'.repeat(Math.max(3, gp3.length)));
     } else {
       if (!user.phone || !user.phone.trim()) {
-        throw new BadRequestException('برای این حساب کاربری شماره موبایلی ثبت نشده است.');
+        return {
+          success: true,
+          message: 'اگر حساب کاربری با این مشخصات وجود داشته باشد، راهنمای بازیابی ارسال می‌شود.',
+        };
       }
       targetDestination = normalizePhoneNumber(user.phone);
       maskedDestination = targetDestination.replace(/(\d{4})(\d+)(\d{4})/, (m, p1, p2, p3) => `${p1}***${p3}`);
@@ -350,7 +365,6 @@ export class AuthService {
         message: `کد تایید ${selectedChannel === 'sms' ? 'پیامک' : 'ایمیل'} هنوز معتبر است. لطفاً ${waitSeconds} ثانیه دیگر جهت درخواست مجدد صبر کنید.`,
         retryAfter: waitSeconds,
         channel: selectedChannel,
-        devCode: recentOtp.code,
       });
     }
 
@@ -368,7 +382,7 @@ export class AuthService {
     await this.otpModel.updateMany(invalidateFilter, { $set: { used: true } });
 
     // Generate random 5-digit code unique to this channel
-    const generatedCode = Math.floor(10000 + Math.random() * 90000).toString();
+    const generatedCode = String(randomInt(10000, 100000));
     const expiresAt = new Date(Date.now() + 120 * 1000); // Exactly 2 minutes (120 seconds)
 
     await this.otpModel.create({
@@ -376,17 +390,12 @@ export class AuthService {
       email: selectedChannel === 'email' ? targetDestination : undefined,
       channel: selectedChannel,
       purpose: 'reset-password',
-      code: generatedCode,
+      codeHash: this.hashOtp(generatedCode, 'reset-password', targetDestination),
       expiresAt,
       used: false,
       isVerified: false,
       attempts: 0,
     });
-
-    console.log('\n======================================================');
-    console.log(`[HatefAroma Reset Password] User: ${user.username} | Channel: ${selectedChannel} | Destination: ${targetDestination}`);
-    console.log(`[HatefAroma Reset Password] 🔑 Code: ${generatedCode} | ⏰ Valid for: 120s (2 minutes)`);
-    console.log('======================================================\n');
 
     return {
       success: true,
@@ -396,7 +405,7 @@ export class AuthService {
       channel: selectedChannel,
       target: maskedDestination,
       expiresIn: 120,
-      devCode: generatedCode, // Returned for dev testing in UI
+      ...(this.configService.get<string>('NODE_ENV') === 'production' ? {} : { devCode: generatedCode }),
     };
   }
 
@@ -432,28 +441,21 @@ export class AuthService {
       }
       user = await this.usersService.findByUsernameOrEmail(cleanId);
       if (!user) {
-        throw new NotFoundException('حساب کاربری با این مشخصات در سیستم یافت نشد.');
+        throw new BadRequestException('کد تایید یا مشخصات واردشده معتبر نیست.');
       }
     }
 
-    if (confirmPassword && newPassword !== confirmPassword) {
+    if (!confirmPassword || newPassword !== confirmPassword) {
       throw new BadRequestException('رمز عبور جدید و تکرار آن یکسان نیستند.');
     }
 
-    if (!newPassword || newPassword.length < 6) {
-      throw new BadRequestException('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
+    if (!newPassword || newPassword.length < 12) {
+      throw new BadRequestException('رمز عبور جدید باید حداقل ۱۲ کاراکتر باشد.');
     }
 
-    // Convert Persian/Arabic digits to English digits
-    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    let cleanCode = (code || '').trim();
-    for (let i = 0; i < 10; i++) {
-      cleanCode = cleanCode.replace(new RegExp(persianDigits[i], 'g'), i.toString());
-      cleanCode = cleanCode.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
-    }
+    const cleanCode = this.normalizeOtpCode(code || '');
 
-    if (!cleanCode || cleanCode.length < 4) {
+    if (!/^\d{5}$/.test(cleanCode)) {
       throw new BadRequestException('کد تایید وارد شده نامعتبر است.');
     }
 
@@ -462,7 +464,7 @@ export class AuthService {
     if (user.phone && (!channel || channel === 'sms')) {
       matchConditions.push({ phone: normalizePhoneNumber(user.phone), channel: 'sms' });
     }
-    if (user.email && (!channel || channel === 'email')) {
+    if (user.email && user.isEmailVerified && (!channel || channel === 'email')) {
       matchConditions.push({ email: user.email.trim().toLowerCase(), channel: 'email' });
     }
 
@@ -470,28 +472,17 @@ export class AuthService {
       throw new BadRequestException('اطلاعات تماس معتبری برای این کاربر یافت نشد.');
     }
 
-    // Try finding by exact code first
-    let otpRecord = await this.otpModel
-      .findOne({
-        used: false,
-        purpose: 'reset-password',
-        expiresAt: { $gt: new Date() },
-        code: cleanCode,
-        $or: matchConditions,
-      })
-      .sort({ createdAt: -1 });
-
-    // If not found by code, look for any active OTP to increment attempts
-    if (!otpRecord) {
-      otpRecord = await this.otpModel
-        .findOne({
-          used: false,
-          purpose: 'reset-password',
-          expiresAt: { $gt: new Date() },
-          $or: matchConditions,
-        })
-        .sort({ createdAt: -1 });
-    }
+    const resetOtpFilter = {
+      used: false,
+      purpose: 'reset-password',
+      expiresAt: { $gt: new Date() },
+      $or: matchConditions,
+    };
+    const otpRecord = await this.otpModel
+      .findOne(resetOtpFilter)
+      .sort({ createdAt: -1 })
+      .select('+codeHash')
+      .exec();
 
     if (!otpRecord) {
       throw new BadRequestException(
@@ -500,20 +491,24 @@ export class AuthService {
     }
 
     if (otpRecord.attempts >= 5) {
-      otpRecord.used = true;
-      await otpRecord.save();
       throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
     }
 
-    if (otpRecord.code !== cleanCode) {
-      otpRecord.attempts += 1;
-      await otpRecord.save();
+    const recipient = otpRecord.phone || otpRecord.email || '';
+    const codeHash = this.hashOtp(cleanCode, 'reset-password', recipient);
+    if (!this.otpMatches(otpRecord.codeHash, cleanCode, 'reset-password', recipient)) {
+      await this.recordOtpFailure(otpRecord._id, otpRecord.attempts);
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
-    // Mark as used
-    otpRecord.used = true;
-    await otpRecord.save();
+    const claimedOtp = await this.otpModel.findOneAndUpdate(
+      { ...resetOtpFilter, _id: otpRecord._id, codeHash },
+      { $set: { used: true } },
+      { new: true },
+    ).exec();
+    if (!claimedOtp) {
+      throw new BadRequestException('کد تایید منقضی یا قبلاً استفاده شده است. لطفاً مجدداً درخواست کد دهید.');
+    }
 
     // Invalidate all other active reset-password OTPs for this user across both channels
     await this.otpModel.updateMany(
@@ -529,8 +524,9 @@ export class AuthService {
     );
 
     // Hash and update password
-    user.password = await bcrypt.hash(newPassword, 10);
+    user.password = await bcrypt.hash(newPassword, 12);
     user.hasPassword = true;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     ensureUniqueAddressTitles(user.addresses || []);
     await user.save();
 
@@ -541,6 +537,7 @@ export class AuthService {
   }
 
   async sendOtp(phone: string, purpose: 'login' | 'register' | 'verify-phone' = 'login') {
+    this.ensureOtpDeliveryIsAvailable();
     const cleanPhone = normalizePhoneNumber(phone);
 
     // Check account status based on purpose
@@ -571,6 +568,8 @@ export class AuthService {
     const recentOtp = await this.otpModel
       .findOne({
         phone: cleanPhone,
+        purpose,
+        used: false,
         createdAt: { $gte: new Date(Date.now() - 120 * 1000) },
       })
       .sort({ createdAt: -1 });
@@ -583,81 +582,70 @@ export class AuthService {
         error: 'RATE_LIMIT',
         message: `لطفاً قبل از ارسال مجدد کد، ${waitSeconds} ثانیه صبر کنید.`,
         retryAfter: waitSeconds,
-        devCode: recentOtp.code,
       });
     }
 
     // Invalidate prior unused OTPs for this phone
     await this.otpModel.updateMany(
-      { phone: cleanPhone, used: false },
+      { phone: cleanPhone, purpose, used: false },
       { $set: { used: true } },
     );
 
-    // Generate random 5-digit numeric code (valid for 5 minutes)
-    const generatedCode = Math.floor(10000 + Math.random() * 90000).toString();
+    const generatedCode = String(randomInt(10000, 100000));
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes valid
 
     await this.otpModel.create({
       phone: cleanPhone,
-      code: generatedCode,
+      channel: 'sms',
+      purpose,
+      codeHash: this.hashOtp(generatedCode, purpose, cleanPhone),
       expiresAt,
       used: false,
       isVerified: false,
       attempts: 0,
     });
 
-    // Console output for development without SMS gateway
-    console.log('\n======================================================');
-    console.log(`[HatefAroma OTP Service] 📱 Phone: ${cleanPhone} | 🔑 Code: ${generatedCode} (purpose: ${purpose})`);
-    console.log(`[HatefAroma OTP Service] ⏰ Expires in 5 minutes (resend timer: 120s)`);
-    console.log('======================================================\n');
-
     return {
       success: true,
       message: 'کد تایید یکبار مصرف با موفقیت ایجاد شد.',
-      phone: cleanPhone,
+      phone: cleanPhone.replace(/^(\d{4})\d+(\d{2})$/, '$1***$2'),
       expiresIn: 120,
-      devCode: generatedCode, // Returned for dev/testing in UI without SMS provider
+      ...(this.configService.get<string>('NODE_ENV') === 'production' ? {} : { devCode: generatedCode }),
     };
   }
 
   async verifyOtp(phone: string, code: string, purpose: 'login' | 'register' | 'verify-phone' = 'login') {
-    const cleanPhone = normalizePhoneNumber(phone);
-
-    // Convert Persian/Arabic digits to English
-    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    let cleanCode = (code || '').trim();
-    for (let i = 0; i < 10; i++) {
-      cleanCode = cleanCode.replace(new RegExp(persianDigits[i], 'g'), i.toString());
-      cleanCode = cleanCode.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
+    if (purpose === 'verify-phone') {
+      throw new BadRequestException('برای تایید شماره حساب، از مسیر تایید شماره کاربر استفاده کنید.');
     }
-
-    if (!cleanCode || cleanCode.length < 4) {
+    const cleanPhone = normalizePhoneNumber(phone);
+    const cleanCode = this.normalizeOtpCode(code || '');
+    if (!/^\d{5}$/.test(cleanCode)) {
       throw new BadRequestException('کد تایید وارد شده نامعتبر است.');
     }
 
     const otpRecord = await this.otpModel
       .findOne({
         phone: cleanPhone,
+        purpose,
         used: false,
         expiresAt: { $gt: new Date() },
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .select('+codeHash')
+      .exec();
 
     if (!otpRecord) {
       throw new BadRequestException('کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.');
     }
 
     if (otpRecord.attempts >= 5) {
-      otpRecord.used = true;
-      await otpRecord.save();
+      await this.otpModel.updateOne({ _id: otpRecord._id, used: false }, { $set: { used: true } }).exec();
       throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
     }
 
-    if (otpRecord.code !== cleanCode) {
-      otpRecord.attempts += 1;
-      await otpRecord.save();
+    if (!this.otpMatches(otpRecord.codeHash, cleanCode, purpose, cleanPhone)) {
+      await this.recordOtpFailure(otpRecord._id, otpRecord.attempts);
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
@@ -670,9 +658,14 @@ export class AuthService {
         );
       }
 
-      otpRecord.isVerified = true;
-      otpRecord.expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes to complete profile
-      await otpRecord.save();
+      const verifiedOtp = await this.otpModel.findOneAndUpdate(
+        { _id: otpRecord._id, purpose: 'register', used: false, codeHash: otpRecord.codeHash },
+        { $set: { isVerified: true, expiresAt: new Date(Date.now() + 30 * 60 * 1000) } },
+        { new: true },
+      ).exec();
+      if (!verifiedOtp) {
+        throw new BadRequestException('کد تایید منقضی یا قبلاً استفاده شده است. لطفاً مجدداً درخواست کد دهید.');
+      }
 
       return {
         success: true,
@@ -681,16 +674,27 @@ export class AuthService {
       };
     }
 
-    // Mark as used
-    otpRecord.used = true;
-    await otpRecord.save();
-
-    // Requirement 3: Only allow login if account exists - NO auto-creating account!
     const user = await this.usersService.findByPhone(cleanPhone);
     if (!user) {
       throw new NotFoundException(
         'حساب کاربری با این شماره موبایل یافت نشد. لطفاً ابتدا در سایت ثبت‌نام کنید.',
       );
+    }
+
+    const claimedOtp = await this.otpModel.findOneAndUpdate(
+      {
+        _id: otpRecord._id,
+        phone: cleanPhone,
+        purpose: 'login',
+        used: false,
+        expiresAt: { $gt: new Date() },
+        codeHash: otpRecord.codeHash,
+      },
+      { $set: { used: true } },
+      { new: true },
+    ).exec();
+    if (!claimedOtp) {
+      throw new BadRequestException('کد تایید منقضی یا قبلاً استفاده شده است. لطفاً مجدداً درخواست کد دهید.');
     }
 
     if (!user.isPhoneVerified) {
@@ -710,6 +714,7 @@ export class AuthService {
       phone: userObj.phone || cleanPhone,
       role: userObj.role,
       isVip: userObj.isVip,
+      tokenVersion: user.tokenVersion || 0,
     };
 
     return {
@@ -722,41 +727,33 @@ export class AuthService {
 
   async verifyPhoneForUser(userId: string, phone: string, code: string) {
     const cleanPhone = normalizePhoneNumber(phone);
-
-    // Convert Persian/Arabic digits
-    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    let cleanCode = (code || '').trim();
-    for (let i = 0; i < 10; i++) {
-      cleanCode = cleanCode.replace(new RegExp(persianDigits[i], 'g'), i.toString());
-      cleanCode = cleanCode.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
-    }
-
-    if (!cleanCode || cleanCode.length < 4) {
+    const cleanCode = this.normalizeOtpCode(code || '');
+    if (!/^\d{5}$/.test(cleanCode)) {
       throw new BadRequestException('کد تایید وارد شده نامعتبر است.');
     }
 
     const otpRecord = await this.otpModel
       .findOne({
         phone: cleanPhone,
+        purpose: 'verify-phone',
         used: false,
         expiresAt: { $gt: new Date() },
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .select('+codeHash')
+      .exec();
 
     if (!otpRecord) {
       throw new BadRequestException('کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.');
     }
 
     if (otpRecord.attempts >= 5) {
-      otpRecord.used = true;
-      await otpRecord.save();
+      await this.otpModel.updateOne({ _id: otpRecord._id, used: false }, { $set: { used: true } }).exec();
       throw new BadRequestException('تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً کد جدید دریافت کنید.');
     }
 
-    if (otpRecord.code !== cleanCode) {
-      otpRecord.attempts += 1;
-      await otpRecord.save();
+    if (!this.otpMatches(otpRecord.codeHash, cleanCode, 'verify-phone', cleanPhone)) {
+      await this.recordOtpFailure(otpRecord._id, otpRecord.attempts);
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
@@ -770,13 +767,18 @@ export class AuthService {
       throw new ConflictException('این شماره موبایل قبلاً توسط حساب کاربری دیگری تایید شده است.');
     }
 
-    // Mark as used
-    otpRecord.used = true;
-    await otpRecord.save();
-
     const user = await this.userModel.findOne({ _id: userId, deleted: false });
     if (!user) {
       throw new NotFoundException('کاربر مورد نظر یافت نشد.');
+    }
+
+    const claimedOtp = await this.otpModel.findOneAndUpdate(
+      { _id: otpRecord._id, phone: cleanPhone, purpose: 'verify-phone', used: false, codeHash: otpRecord.codeHash },
+      { $set: { used: true } },
+      { new: true },
+    ).exec();
+    if (!claimedOtp) {
+      throw new BadRequestException('کد تایید منقضی یا قبلاً استفاده شده است. لطفاً مجدداً درخواست کد دهید.');
     }
 
     user.phone = cleanPhone;

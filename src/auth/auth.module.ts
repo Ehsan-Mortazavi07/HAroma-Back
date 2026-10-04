@@ -9,11 +9,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Otp, OtpSchema } from './schemas/otp.schema';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
+    ThrottlerModule.forRoot([{ name: 'default', limit: 30, ttl: 60_000, blockDuration: 60_000 }]),
     MongooseModule.forFeature([
       { name: Otp.name, schema: OtpSchema },
       { name: User.name, schema: UserSchema },
@@ -22,17 +24,15 @@ import { Otp, OtpSchema } from './schemas/otp.schema';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
-        secret:
-          configService.get<string>('JWT_SECRET') ||
-          'hatef_aroma_super_secret_jwt_key_2026_luxury_perfume_store',
+        secret: configService.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') || '7d') as any,
+          expiresIn: (configService.getOrThrow<string>('JWT_EXPIRES_IN') || '1d') as any,
         },
       }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, ThrottlerGuard],
   exports: [AuthService],
 })
 export class AuthModule {}

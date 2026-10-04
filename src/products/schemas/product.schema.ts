@@ -3,6 +3,7 @@ import { Document, Types } from 'mongoose';
 import { Category } from '../../categories/schemas/category.schema';
 import { Attribute } from '../../attributes/schemas/attribute.schema';
 import { Brand } from '../../brands/schemas/brand.schema';
+import { sanitizeProductDescription } from '../product-content.util';
 
 export type ProductDocument = Product & Document;
 
@@ -146,7 +147,21 @@ export class Product {
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
-ProductSchema.index({ slug: 1 });
+const sanitizeProductDocument = (_document: unknown, value: Product) => {
+  if (typeof value.description === 'string') {
+    value.description = sanitizeProductDescription(value.description);
+  }
+  if (typeof value.descriptionEn === 'string') {
+    value.descriptionEn = sanitizeProductDescription(value.descriptionEn);
+  }
+  return value;
+};
+ProductSchema.set('toJSON', { transform: sanitizeProductDocument });
+ProductSchema.set('toObject', { transform: sanitizeProductDocument });
+ProductSchema.pre('save', function () {
+  this.description = sanitizeProductDescription(this.description);
+  this.descriptionEn = sanitizeProductDescription(this.descriptionEn);
+});
 ProductSchema.index({ categories: 1 });
 ProductSchema.index({ brand: 1 });
 ProductSchema.index({ brands: 1 });

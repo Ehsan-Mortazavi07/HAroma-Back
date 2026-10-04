@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums';
+import { BulkIdsDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class AttributesController {
@@ -61,8 +62,8 @@ export class AttributesController {
   @Post('admin/attributes/bulk/delete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async adminBulkDeleteAttributes(@Body('ids') ids: string[]) {
-    return this.attributesService.bulkSoftDelete(ids);
+  async adminBulkDeleteAttributes(@Body() dto: BulkIdsDto) {
+    return this.attributesService.bulkSoftDelete(dto.ids);
   }
 
   @Patch('admin/attributes/:id')

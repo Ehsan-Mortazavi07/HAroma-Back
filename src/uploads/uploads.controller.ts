@@ -21,7 +21,15 @@ export class UploadsController {
   constructor(private readonly uploadsService: UploadsService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+      fileFilter: (_request, file, callback) => {
+        const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
+        callback(allowedTypes.has(file.mimetype) ? null : new BadRequestException('فرمت تصویر پشتیبانی نمی‌شود.'), allowedTypes.has(file.mimetype));
+      },
+    }),
+  )
   async uploadSingle(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('فایلی ارسال نشده است.');
@@ -30,7 +38,15 @@ export class UploadsController {
   }
 
   @Post('multiple')
-  @UseInterceptors(FilesInterceptor('files', 10))
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      limits: { fileSize: 10 * 1024 * 1024, files: 10 },
+      fileFilter: (_request, file, callback) => {
+        const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
+        callback(allowedTypes.has(file.mimetype) ? null : new BadRequestException('فرمت تصویر پشتیبانی نمی‌شود.'), allowedTypes.has(file.mimetype));
+      },
+    }),
+  )
   async uploadMultiple(@UploadedFiles() files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
       throw new BadRequestException('هیچ فایلی ارسال نشده است.');

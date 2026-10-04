@@ -37,7 +37,6 @@ export class Brand {
 }
 
 export const BrandSchema = SchemaFactory.createForClass(Brand);
-BrandSchema.index({ slug: 1 });
 BrandSchema.index({ isActive: 1 });
 BrandSchema.index({ deleted: 1 });
 BrandSchema.index({ order: 1 });

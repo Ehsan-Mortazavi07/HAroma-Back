@@ -11,11 +11,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private usersService: UsersService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        (request: { headers?: { cookie?: string } }) => {
+          const cookie = request.headers?.cookie
+            ?.split(';')
+            .map((item) => item.trim())
+            .find((item) => item.startsWith('hatefaroma_token='));
+          return cookie ? cookie.slice('hatefaroma_token='.length) : null;
+        },
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
-      secretOrKey:
-        configService.get<string>('JWT_SECRET') ||
-        'hatef_aroma_super_secret_jwt_key_2026_luxury_perfume_store',
+      secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
     });
   }
 
@@ -23,6 +30,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const user = await this.usersService.findById(payload.sub);
     if (!user || user.deleted) {
       throw new UnauthorizedException('توکن نامعتبر است یا کاربر وجود ندارد.');
+    }
+    if ((payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
+      throw new UnauthorizedException('نشست شما منقضی شده است؛ دوباره وارد شوید.');
     }
     return user;
   }

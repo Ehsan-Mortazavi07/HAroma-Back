@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
@@ -6,20 +6,17 @@ import { CreateProductDto, UpdateProductDto, ProductQueryDto } from './dtos';
 import { Category, CategoryDocument } from '../categories/schemas/category.schema';
 import { Brand, BrandDocument } from '../brands/schemas/brand.schema';
 import { AttributesService } from '../attributes/attributes.service';
+import { normalizeSearchQuery } from '../common/utils/search.util';
+import { parsePage, parsePageSize } from '../common/utils/pagination.util';
 
 @Injectable()
-export class ProductsService implements OnModuleInit {
+export class ProductsService {
   constructor(
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     @InjectModel(Category.name) private categoryModel: Model<CategoryDocument>,
     @InjectModel(Brand.name) private brandModel: Model<BrandDocument>,
     private attributesService: AttributesService,
   ) {}
-
-  async onModuleInit() {
-    // Purge legacy soft-deleted documents from database
-    await this.productModel.deleteMany({ deleted: true }).catch(() => {});
-  }
 
   async create(createProductDto: CreateProductDto): Promise<ProductDocument> {
     const slug = createProductDto.slug.toLowerCase().trim();
@@ -114,20 +111,21 @@ export class ProductsService implements OnModuleInit {
   }
 
   async findAll(query: ProductQueryDto) {
-    const page = Math.max(1, Number(query.page) || 1);
-    const pageSize = Math.max(1, Number(query.pageSize) || 12);
+    const page = parsePage(query.page);
+    const pageSize = parsePageSize(query.pageSize, 12);
     const skip = (page - 1) * pageSize;
 
     const filter: any = { deleted: false };
 
-    if (query.q) {
+    const searchQuery = normalizeSearchQuery(query.q, 100);
+    if (searchQuery) {
       filter.$or = [
-        { title: { $regex: query.q, $options: 'i' } },
-        { titleEn: { $regex: query.q, $options: 'i' } },
-        { shortDescription: { $regex: query.q, $options: 'i' } },
-        { description: { $regex: query.q, $options: 'i' } },
-        { 'attributes.value': { $regex: query.q, $options: 'i' } },
-        { 'variants.title': { $regex: query.q, $options: 'i' } },
+        { title: { $regex: searchQuery, $options: 'i' } },
+        { titleEn: { $regex: searchQuery, $options: 'i' } },
+        { shortDescription: { $regex: searchQuery, $options: 'i' } },
+        { description: { $regex: searchQuery, $options: 'i' } },
+        { 'attributes.value': { $regex: searchQuery, $options: 'i' } },
+        { 'variants.title': { $regex: searchQuery, $options: 'i' } },
       ];
     }
 
@@ -468,15 +466,16 @@ export class ProductsService implements OnModuleInit {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.productModel.deleteMany({
-      _id: { $in: validIds },
-    });
-    return { success: true, modifiedCount: result.deletedCount || 0 };
+    const result = await this.productModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const product = await this.findById(id);
-    await this.productModel.deleteOne({ _id: product._id });
+    await this.productModel.updateOne({ _id: product._id }, { $set: { deleted: true } });
     return { success: true, message: 'محصول با موفقیت حذف شد.' };
   }
 

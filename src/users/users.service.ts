@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
@@ -7,44 +7,12 @@ import { CreateUserDto, UpdateUserDto, CreateAddressDto, UpdateAddressDto } from
 import { UserRole } from '../common/enums';
 import { normalizePhoneNumber } from '../auth/utils/phone.util';
 import { addressTitleKey, ensureUniqueAddressTitles, normalizeAddressTitle } from './address-title.util';
+import { normalizeSearchQuery } from '../common/utils/search.util';
+import { parsePage, parsePageSize } from '../common/utils/pagination.util';
 
 @Injectable()
-export class UsersService implements OnModuleInit {
+export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
-
-  async onModuleInit() {
-    // 1. Automatically normalize any legacy records where role was stored as 'vip'
-    try {
-      await this.userModel.updateMany(
-        { role: 'vip' as any },
-        { $set: { role: UserRole.USER, isVip: true } },
-      );
-    } catch {
-      // Ignored if DB is still establishing connection
-    }
-
-    // 2. Physical purge of any lingering soft-deleted users
-    try {
-      await this.userModel.deleteMany({ deleted: true });
-    } catch {}
-
-    // 3. Drop legacy email_1 index if it does not have partialFilterExpression
-    try {
-      const indexes = await this.userModel.collection.indexes();
-      const emailIndex = indexes.find((idx) => idx.name === 'email_1');
-      if (emailIndex && !emailIndex.partialFilterExpression) {
-        await this.userModel.collection.dropIndex('email_1');
-      }
-    } catch {}
-
-    // 4. Ensure admin and editor accounts have isEmailVerified & isPhoneVerified true
-    try {
-      await this.userModel.updateMany(
-        { role: { $in: [UserRole.ADMIN, UserRole.EDITOR] } },
-        { $set: { isEmailVerified: true, isPhoneVerified: true } },
-      );
-    } catch {}
-  }
 
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
     const cleanUsername = createUserDto.username.trim().toLowerCase();
@@ -77,7 +45,7 @@ export class UsersService implements OnModuleInit {
     }
 
     const hashedPassword = createUserDto.password?.trim()
-      ? await bcrypt.hash(createUserDto.password.trim(), 10)
+      ? await bcrypt.hash(createUserDto.password.trim(), 12)
       : '';
     const user = new this.userModel({
       ...createUserDto,
@@ -89,17 +57,18 @@ export class UsersService implements OnModuleInit {
   }
 
   async findAll(query: { page?: number; pageSize?: number; q?: string; role?: string }) {
-    const page = Math.max(1, Number(query.page) || 1);
-    const pageSize = Math.max(1, Number(query.pageSize) || 20);
+    const page = parsePage(query.page);
+    const pageSize = parsePageSize(query.pageSize);
     const skip = (page - 1) * pageSize;
 
     const filter: any = { deleted: false };
-    if (query.q) {
+    const searchQuery = normalizeSearchQuery(query.q, 100);
+    if (searchQuery) {
       filter.$or = [
-        { fullName: { $regex: query.q, $options: 'i' } },
-        { email: { $regex: query.q, $options: 'i' } },
-        { username: { $regex: query.q, $options: 'i' } },
-        { phone: { $regex: query.q, $options: 'i' } },
+        { fullName: { $regex: searchQuery, $options: 'i' } },
+        { email: { $regex: searchQuery, $options: 'i' } },
+        { username: { $regex: searchQuery, $options: 'i' } },
+        { phone: { $regex: searchQuery, $options: 'i' } },
       ];
     }
     if (query.role) {
@@ -175,7 +144,6 @@ export class UsersService implements OnModuleInit {
         const existingUser = await this.userModel.findOne({
           _id: { $ne: id },
           username: cleanUsername,
-          deleted: false,
         });
         if (existingUser) {
           throw new ConflictException('این نام کاربری قبلاً توسط کاربر دیگری انتخاب شده است.');
@@ -198,9 +166,11 @@ export class UsersService implements OnModuleInit {
             throw new ConflictException('این آدرس ایمیل قبلاً توسط کاربر دیگری ثبت شده است.');
           }
           user.email = cleanEmail;
+          user.isEmailVerified = false;
         }
       } else {
         user.email = undefined;
+        user.isEmailVerified = false;
       }
     }
 
@@ -216,6 +186,16 @@ export class UsersService implements OnModuleInit {
         );
       }
       if (isAdmin) {
+        if (cleanPhone && cleanPhone !== user.phone) {
+          const existingPhone = await this.userModel.findOne({
+            _id: { $ne: id },
+            phone: cleanPhone,
+            deleted: false,
+          });
+          if (existingPhone) {
+            throw new ConflictException('این شماره تماس قبلاً توسط حساب کاربری دیگری ثبت شده است.');
+          }
+        }
         user.phone = cleanPhone;
       }
     }
@@ -271,7 +251,8 @@ export class UsersService implements OnModuleInit {
           throw new BadRequestException('کلمه عبور فعلی وارد شده نادرست است.');
         }
       }
-      user.password = await bcrypt.hash(updateUserDto.password, 10);
+      user.password = await bcrypt.hash(updateUserDto.password, 12);
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
     }
 
     // 5. Admin-only role and VIP flags
@@ -336,9 +317,8 @@ export class UsersService implements OnModuleInit {
       throw new BadRequestException('امکان حذف حساب کاربری جاری خودتان وجود ندارد.');
     }
 
-    // Physical hard delete directly from database
-    await this.userModel.deleteOne({ _id: user._id });
-    return { success: true, message: 'کاربر با موفقیت از پایگاه داده حذف شد.' };
+    await this.userModel.updateOne({ _id: user._id }, { $set: { deleted: true } });
+    return { success: true, message: 'کاربر با موفقیت حذف شد.' };
   }
 
   async bulkUpdateVip(
@@ -374,9 +354,11 @@ export class UsersService implements OnModuleInit {
       return { success: true, modifiedCount: 0 };
     }
 
-    // Physical hard delete directly from database
-    const result = await this.userModel.deleteMany({ _id: { $in: validIds } });
-    return { success: true, modifiedCount: result.deletedCount };
+    const result = await this.userModel.updateMany(
+      { _id: { $in: validIds }, deleted: false },
+      { $set: { deleted: true } },
+    );
+    return { success: true, modifiedCount: result.modifiedCount };
   }
 
   async countTotal() {

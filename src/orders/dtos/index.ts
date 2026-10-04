@@ -16,6 +16,8 @@ import {
   IsInt,
   ArrayUnique,
   Max,
+  ArrayMinSize,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderStatus, PaymentMethod } from '../../common/enums';
@@ -36,7 +38,9 @@ export class OrderItemDto {
 
   @IsNotEmpty()
   @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(99)
   quantity!: number;
 
   @IsOptional()
@@ -46,6 +50,11 @@ export class OrderItemDto {
   @IsOptional()
   @IsString()
   selectedAttributes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  variantId?: string;
 }
 
 export class DeliveryAddressDto {
@@ -96,6 +105,8 @@ export class DeliveryAddressDto {
 export class CreateOrderDto {
   @IsNotEmpty()
   @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items!: OrderItemDto[];
@@ -111,6 +122,7 @@ export class CreateOrderDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   couponCode?: string;
 
   @IsOptional()
@@ -146,6 +158,7 @@ export class UpdateAdminOrderDto {
   version!: number;
 
   @IsArray()
+  @ArrayMaxSize(50)
   @ArrayUnique({ message: 'فهرست اقلام برای حذف تکراری است.' })
   @IsInt({ each: true })
   @Min(0, { each: true })
@@ -153,6 +166,7 @@ export class UpdateAdminOrderDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @ArrayUnique((item: UpdateOrderItemQuantityDto) => item.index, {
     message: 'هر قلم سفارش فقط یک‌بار قابل ویرایش است.',
   })
@@ -162,6 +176,7 @@ export class UpdateAdminOrderDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => AddOrderItemDto)
   addItems?: AddOrderItemDto[];

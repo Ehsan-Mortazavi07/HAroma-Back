@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums';
+import { BulkIdsDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class VariantTemplatesController {
@@ -65,7 +66,7 @@ export class VariantTemplatesController {
   @Post('admin/variant-templates/bulk/delete')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async bulkDeleteTemplates(@Body('ids') ids: string[]) {
-    return this.variantTemplatesService.bulkSoftDelete(ids);
+  async bulkDeleteTemplates(@Body() dto: BulkIdsDto) {
+    return this.variantTemplatesService.bulkSoftDelete(dto.ids);
   }
 }

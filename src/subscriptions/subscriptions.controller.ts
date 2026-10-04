@@ -12,6 +12,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UserRole } from '../common/enums';
+import { SubscribePlanDto } from '../common/dtos/admin-operation.dto';
 
 @Controller()
 export class SubscriptionsController {
@@ -21,9 +22,9 @@ export class SubscriptionsController {
   @UseGuards(JwtAuthGuard)
   async subscribe(
     @CurrentUser() user: any,
-    @Body('planId') planId: string,
+    @Body() dto: SubscribePlanDto,
   ) {
-    return this.subscriptionsService.subscribe(user._id || user.id, planId);
+    return this.subscriptionsService.subscribe(user._id || user.id, dto.planId);
   }
 
   @Get('subscriptions/my')

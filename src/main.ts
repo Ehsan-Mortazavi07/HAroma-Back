@@ -3,34 +3,81 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const logger = new Logger('HatefAroma-Bootstrap');
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('PORT') || 7731;
+  const port = configService.getOrThrow<number>('PORT');
+  const allowedOrigins = configService.getOrThrow<string>('CORS_ORIGINS').split(',');
+  const trustProxyHops = configService.getOrThrow<number>('TRUST_PROXY_HOPS');
+
+  // Trust only the explicitly configured number of reverse-proxy hops so
+  // request IPs used by rate limiting cannot be spoofed via X-Forwarded-For.
+  app.set('trust proxy', trustProxyHops);
 
   // Global prefix
   app.setGlobalPrefix('v1');
 
   // CORS
   app.enableCors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Origin is not allowed by CORS.'));
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
+  });
+
+  // Browser sessions use an HttpOnly cookie, so reject unsafe cross-origin
+  // requests that attempt to authenticate with that cookie (CSRF protection).
+  const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  app.use((request, response, next) => {
+    const sessionCookie = request.headers.cookie
+      ?.split(';')
+      .some((part) => part.trim().startsWith('hatefaroma_token='));
+    if (!sessionCookie || !unsafeMethods.has(request.method)) {
+      next();
+      return;
+    }
+
+    const origin = request.headers.origin;
+    if (!origin || !allowedOrigins.includes(origin)) {
+      response.status(403).json({ message: 'درخواست معتبر نیست.' });
+      return;
+    }
+    next();
   });
 
   // Validation
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
-      whitelist: false,
-      forbidNonWhitelisted: false,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      forbidUnknownValues: true,
     }),
   );
+
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
+  app.use((_request, response, next) => {
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Frame-Options', 'DENY');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if (configService.get<string>('NODE_ENV') === 'production') {
+      response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  });
 
   // Global Exception Filter
   app.useGlobalFilters(new AllExceptionsFilter());
