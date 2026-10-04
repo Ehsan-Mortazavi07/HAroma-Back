@@ -2,17 +2,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import { join } from 'path';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
-async function bootstrap() {
-  const logger = new Logger('HatefAroma-Bootstrap');
+async function createApplication() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
 
   const configService = app.get(ConfigService);
-  const port = configService.getOrThrow<number>('PORT');
   const allowedOrigins = configService.getOrThrow<string>('CORS_ORIGINS').split(',');
   const trustProxyHops = configService.getOrThrow<number>('TRUST_PROXY_HOPS');
 
@@ -87,7 +86,29 @@ async function bootstrap() {
     prefix: '/uploads/',
   });
 
+  await app.init();
+  return app;
+}
+
+let vercelApplication: Promise<NestExpressApplication> | undefined;
+
+async function vercelHandler(request: Request, response: Response): Promise<void> {
+  vercelApplication ??= createApplication();
+  const app = await vercelApplication;
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp(request, response);
+}
+
+export default vercelHandler;
+
+async function bootstrap() {
+  const logger = new Logger('HatefAroma-Bootstrap');
+  const app = await createApplication();
+  const port = app.get(ConfigService).getOrThrow<number>('PORT');
   await app.listen(port, '0.0.0.0');
   logger.log(`🌿 HatefAroma Backend running on: http://127.0.0.1:${port}/v1`);
 }
-bootstrap();
+
+if (!process.env.VERCEL) {
+  void bootstrap();
+}
