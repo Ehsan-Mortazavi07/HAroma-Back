@@ -154,16 +154,26 @@ export class OrdersService implements OnModuleInit {
       .exec();
   }
 
-  async findById(id: string): Promise<OrderDocument> {
-    const order = await this.orderModel
+  async findById(id: string, includeAdminChangeNotes = false): Promise<OrderDocument> {
+    const query = this.orderModel
       .findOne({ _id: id, deleted: false })
-      .populate('user', 'fullName username email phone')
-      .exec();
+      .populate('user', 'fullName username email phone');
+    if (includeAdminChangeNotes) query.select('+adminChangeNotes');
+    const order = await query.exec();
 
     if (!order) {
       throw new NotFoundException('سفارش مورد نظر یافت نشد.');
     }
     return order;
+  }
+
+  async findAdminChangeNotes(id: string) {
+    const order = await this.orderModel
+      .findOne({ _id: id, deleted: false })
+      .select('+adminChangeNotes')
+      .exec();
+    if (!order) throw new NotFoundException('سفارش مورد نظر یافت نشد.');
+    return order.adminChangeNotes || [];
   }
 
   async findByOrderNumber(orderNumber: string): Promise<OrderDocument> {
@@ -253,7 +263,11 @@ export class OrdersService implements OnModuleInit {
     return order.save();
   }
 
-  async updateOrder(id: string, dto: UpdateAdminOrderDto): Promise<OrderDocument> {
+  async updateOrder(
+    id: string,
+    dto: UpdateAdminOrderDto,
+    admin: { id: string; name: string },
+  ): Promise<OrderDocument> {
     const order = await this.findById(id);
     const orderId = order._id;
     const currentVersion = order.get('__v');
@@ -263,57 +277,145 @@ export class OrdersService implements OnModuleInit {
     }
 
     const existingItems = order.items || [];
-    const indexesToRemove = new Set(dto.removeItemIndexes);
+    const indexesToRemove = new Set(dto.removeItemIndexes || []);
     if ([...indexesToRemove].some((index) => index >= existingItems.length)) {
       throw new BadRequestException('یکی از اقلام انتخاب‌شده برای حذف دیگر در این سفارش نیست.');
     }
-    if (existingItems.length - indexesToRemove.size < 1) {
-      throw new BadRequestException('سفارش باید حداقل یک قلم کالا داشته باشد.');
+
+    const quantityUpdates = new Map<number, number>();
+    for (const update of dto.itemQuantityUpdates || []) {
+      if (update.index >= existingItems.length) {
+        throw new BadRequestException('یکی از اقلام انتخاب‌شده برای ویرایش دیگر در این سفارش نیست.');
+      }
+      if (indexesToRemove.has(update.index)) {
+        throw new BadRequestException('یک قلم را نمی‌توان هم‌زمان ویرایش و حذف کرد.');
+      }
+      if (quantityUpdates.has(update.index)) {
+        throw new BadRequestException('یک قلم سفارش بیش از یک‌بار برای ویرایش فرستاده شده است.');
+      }
+      quantityUpdates.set(update.index, update.quantity);
     }
 
-    const retainedItems = existingItems.filter((_, index) => !indexesToRemove.has(index));
-    const removedItems = existingItems.filter((_, index) => indexesToRemove.has(index));
-    const removedQuantities = this.sumOrderItemQuantities(removedItems);
-    const productIds = [...removedQuantities.keys()];
-    if (productIds.some((productId) => !Types.ObjectId.isValid(productId))) {
-      throw new BadRequestException('شناسه یکی از محصولات سفارش نامعتبر است.');
+    const addItems = dto.addItems || [];
+    const hasItemChanges = indexesToRemove.size > 0 || quantityUpdates.size > 0 || addItems.length > 0;
+    if (hasItemChanges && [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED].includes(order.status)) {
+      throw new BadRequestException('پس از ارسال یا لغو سفارش، تغییر اقلام امکان‌پذیر نیست.');
     }
-    const products = productIds.length
-      ? await this.productModel.find({ _id: { $in: productIds } }).select('_id deleted').lean().exec()
+
+    const addedProductIds = [...new Set(addItems.map((item) => item.productId))];
+    const products = addedProductIds.length
+      ? await this.productModel
+          .find({ _id: { $in: addedProductIds } })
+          .select('_id title price discountPrice images stockCount inStock variants deleted isPublished')
+          .lean()
+          .exec()
       : [];
     const productsById = new Map(products.map((product) => [String(product._id), product]));
 
-    const subtotal = retainedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const retainedItems = existingItems
+      .map((item, index) => ({
+        product: item.product,
+        title: item.title,
+        price: item.price,
+        quantity: quantityUpdates.get(index) ?? item.quantity,
+        image: item.image || '',
+        selectedAttributes: item.selectedAttributes || '',
+        variantId: item.variantId || '',
+        index,
+      }))
+      .filter((item) => !indexesToRemove.has(item.index))
+      .map(({ index: _index, ...item }) => item);
+
+    const addedItems = addItems.map((item) => {
+      const product = productsById.get(item.productId);
+      if (!product || product.deleted || product.isPublished === false || !product.inStock) {
+        throw new BadRequestException('یکی از کالاهای انتخاب‌شده در دسترس نیست.');
+      }
+
+      const variant = item.variantId
+        ? product.variants?.find((candidate) => candidate.id === item.variantId)
+        : undefined;
+      if (item.variantId && !variant) {
+        throw new BadRequestException('ویژگی انتخاب‌شده برای یکی از کالاها معتبر نیست.');
+      }
+      const priceSource = variant || product;
+      const price = priceSource.discountPrice && priceSource.discountPrice > 0
+        ? priceSource.discountPrice
+        : priceSource.price;
+      return {
+        product: new Types.ObjectId(item.productId),
+        title: product.title,
+        price,
+        quantity: item.quantity,
+        image: product.images?.[0] || '',
+        selectedAttributes: variant?.title || '',
+        variantId: variant?.id || '',
+      };
+    });
+    const nextItems = [...retainedItems, ...addedItems];
+    if (nextItems.length < 1) {
+      throw new BadRequestException('سفارش باید حداقل یک قلم کالا داشته باشد.');
+    }
+
+    const oldQuantities = this.sumOrderItemQuantities(existingItems);
+    const newQuantities = this.sumOrderItemQuantities(nextItems);
+    const productIds = [...new Set([...oldQuantities.keys(), ...newQuantities.keys()])];
+    if (productIds.some((productId) => !Types.ObjectId.isValid(productId))) {
+      throw new BadRequestException('شناسه یکی از محصولات سفارش نامعتبر است.');
+    }
+    const inventoryProducts = productIds.length
+      ? await this.productModel
+          .find({ _id: { $in: productIds }, deleted: false })
+          .select('_id deleted stockCount')
+          .lean()
+          .exec()
+      : [];
+    const inventoryProductsById = new Map(inventoryProducts.map((product) => [String(product._id), product]));
+    const quantityDeltas = new Map(productIds.map((productId) => [
+      productId,
+      (newQuantities.get(productId) || 0) - (oldQuantities.get(productId) || 0),
+    ]));
+
+    const subtotal = nextItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const total = Math.max(
       0,
       subtotal - order.couponDiscount - order.vipDiscount + order.shippingFee + order.tax,
     );
-    const update = {
-      items: retainedItems,
+    const update: Record<string, unknown> = {
+      items: nextItems,
       deliveryAddress: dto.deliveryAddress,
       subtotal,
       total,
       updatedAt: new Date(),
     };
 
+    const adminNote = dto.adminNote?.trim();
+    const changeNote = adminNote
+      ? {
+          note: adminNote,
+          adminId: admin.id,
+          adminName: admin.name,
+          createdAt: new Date(),
+        }
+      : null;
+
     const appliedInventoryChanges: Array<{ productId: string; delta: number }> = [];
     try {
-      const inventoryCanBeAdjusted = ![
-        OrderStatus.SHIPPED,
-        OrderStatus.DELIVERED,
-      ].includes(order.status);
-      if (inventoryCanBeAdjusted) {
-        for (const productId of productIds) {
-          const delta = -(removedQuantities.get(productId) || 0);
-          const product = productsById.get(productId);
-          if (!product || product.deleted) continue;
+      if (hasItemChanges) {
+        for (const [productId, delta] of quantityDeltas) {
+          if (delta === 0) continue;
+          const product = inventoryProductsById.get(productId);
+          if (!product) continue;
 
           const filter: Record<string, unknown> = { _id: product._id, deleted: false };
+          if (delta > 0) filter.stockCount = { $gte: delta };
           const result = await this.productModel.updateOne(filter, {
             $inc: { stockCount: -delta, salesCount: delta },
           }).exec();
           if (result.modifiedCount !== 1) {
-            throw new BadRequestException('موجودی یکی از کالاها هم‌زمان تغییر کرده است؛ دوباره تلاش کنید.');
+            throw new BadRequestException(delta > 0
+              ? 'موجودی یکی از کالاها برای این تعداد کافی نیست.'
+              : 'موجودی یکی از کالاها هم‌زمان تغییر کرده است؛ دوباره تلاش کنید.');
           }
           appliedInventoryChanges.push({ productId, delta });
         }
@@ -324,9 +426,18 @@ export class OrdersService implements OnModuleInit {
         deleted: false,
         __v: typeof currentVersion === 'number' ? currentVersion : { $exists: false },
       };
+      const updateOperation: Record<string, unknown> = {
+        $set: update,
+        $inc: { __v: 1 },
+      };
+      if (changeNote) {
+        updateOperation.$push = {
+          adminChangeNotes: { $each: [changeNote], $slice: -100 },
+        };
+      }
       const orderUpdateResult = await this.orderModel.updateOne(
         versionFilter,
-        { $set: update, $inc: { __v: 1 } },
+        updateOperation,
         { runValidators: true, timestamps: false },
       ).exec();
       if (orderUpdateResult.matchedCount !== 1) {
@@ -346,7 +457,7 @@ export class OrdersService implements OnModuleInit {
       }
       throw error;
     }
-    return this.findById(id);
+    return this.findById(id, true);
   }
 
   private sumOrderItemQuantities(items: Array<{ product: Types.ObjectId | string; quantity: number }>) {

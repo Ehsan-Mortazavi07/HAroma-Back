@@ -15,6 +15,7 @@ import {
   IsMongoId,
   IsInt,
   ArrayUnique,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderStatus, PaymentMethod } from '../../common/enums';
@@ -150,8 +151,55 @@ export class UpdateAdminOrderDto {
   @Min(0, { each: true })
   removeItemIndexes!: number[];
 
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique((item: UpdateOrderItemQuantityDto) => item.index, {
+    message: 'هر قلم سفارش فقط یک‌بار قابل ویرایش است.',
+  })
+  @ValidateNested({ each: true })
+  @Type(() => UpdateOrderItemQuantityDto)
+  itemQuantityUpdates?: UpdateOrderItemQuantityDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AddOrderItemDto)
+  addItems?: AddOrderItemDto[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  adminNote?: string;
+
   @IsNotEmpty()
   @ValidateNested()
   @Type(() => DeliveryAddressDto)
   deliveryAddress!: DeliveryAddressDto;
+}
+
+export class UpdateOrderItemQuantityDto {
+  @IsInt()
+  @Min(0)
+  index!: number;
+
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  quantity!: number;
+}
+
+export class AddOrderItemDto {
+  @IsNotEmpty()
+  @IsMongoId()
+  productId!: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  quantity!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  variantId?: string;
 }

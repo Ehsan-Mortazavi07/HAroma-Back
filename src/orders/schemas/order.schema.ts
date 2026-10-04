@@ -25,6 +25,9 @@ export class OrderItem {
 
   @Prop({ default: '' })
   selectedAttributes?: string;
+
+  @Prop({ default: '' })
+  variantId?: string;
 }
 
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
@@ -78,6 +81,24 @@ export class OrderStatusHistoryEntry {
 
 export const OrderStatusHistoryEntrySchema =
   SchemaFactory.createForClass(OrderStatusHistoryEntry);
+
+@Schema({ _id: false })
+export class AdminOrderChangeNote {
+  @Prop({ required: true, trim: true, maxlength: 1000 })
+  note!: string;
+
+  @Prop({ required: true, trim: true })
+  adminId!: string;
+
+  @Prop({ required: true, trim: true })
+  adminName!: string;
+
+  @Prop({ type: Date, required: true })
+  createdAt!: Date;
+}
+
+export const AdminOrderChangeNoteSchema =
+  SchemaFactory.createForClass(AdminOrderChangeNote);
 
 @Schema({ timestamps: true })
 export class Order {
@@ -151,6 +172,9 @@ export class Order {
 
   @Prop({ default: '' })
   notes?: string;
+
+  @Prop({ type: [AdminOrderChangeNoteSchema], default: [], select: false })
+  adminChangeNotes!: AdminOrderChangeNote[];
 
   @Prop({ default: false })
   deleted!: boolean;

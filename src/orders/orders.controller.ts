@@ -92,14 +92,25 @@ export class OrdersController {
     return this.ordersService.findById(id);
   }
 
+  @Get('admin/orders/:id/admin-notes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminGetOrderChangeNotes(@Param('id') id: string) {
+    return this.ordersService.findAdminChangeNotes(id);
+  }
+
   @Patch('admin/orders/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async adminUpdateOrder(
     @Param('id') id: string,
     @Body() dto: UpdateAdminOrderDto,
+    @CurrentUser() admin: any,
   ) {
-    return this.ordersService.updateOrder(id, dto);
+    return this.ordersService.updateOrder(id, dto, {
+      id: String(admin._id || admin.id),
+      name: admin.fullName || admin.username || admin.email || 'مدیر',
+    });
   }
 
   @Patch('admin/orders/:id/status')
