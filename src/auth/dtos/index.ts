@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, MinLength, IsOptional, MaxLength, Matches } from 'class-validator';
+import { IsNotEmpty, IsString, MinLength, IsOptional, MaxLength, Matches, ValidateIf } from 'class-validator';
 
 export class LoginDto {
   @IsNotEmpty({ message: 'ایمیل یا نام کاربری الزامی است.' })
@@ -28,26 +28,27 @@ export class RegisterDto {
   @MaxLength(254)
   email?: string;
 
-  @IsNotEmpty({ message: 'شماره موبایل الزامی است.' })
+  @ValidateIf((_object, value) => value !== undefined && value !== null && value !== '')
   @IsString()
   @Matches(/^[\d۰-۹٠-٩+()\-\s]{7,24}$/)
-  phone!: string;
+  phone?: string;
 
-  @IsNotEmpty({ message: 'کد تایید ۵ رقمی الزامی است.' })
+  // Accepted for compatibility with older clients; registration no longer uses OTP.
+  @IsOptional()
   @IsString()
   @Matches(/^[\d۰-۹٠-٩]{5}$/)
-  code!: string;
+  code?: string;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'رمز عبور الزامی است.' })
   @IsString()
   @MinLength(12, { message: 'رمز عبور باید حداقل ۱۲ کاراکتر باشد.' })
   @MaxLength(128)
-  password?: string;
+  password!: string;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'تکرار رمز عبور الزامی است.' })
   @IsString()
   @MaxLength(128)
-  confirmPassword?: string;
+  confirmPassword!: string;
 
   @IsOptional()
   @IsString()

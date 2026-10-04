@@ -17,7 +17,7 @@ import { normalizePhoneNumber } from './utils/phone.util';
 import { UserRole } from '../common/enums';
 import { ensureUniqueAddressTitles } from '../users/address-title.util';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, randomInt, timingSafeEqual } from 'crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { ServiceUnavailableException } from '@nestjs/common';
 
 @Injectable()
@@ -151,17 +151,17 @@ export class AuthService {
     };
   }
 
-  private async generateUniqueUsername(phone: string): Promise<string> {
-    const digits = phone.replace(/\D/g, '');
+  private async generateUniqueUsername(phone?: string): Promise<string> {
+    const digits = (phone || '').replace(/\D/g, '');
     const suffix = digits.length >= 7 ? digits.slice(-7) : digits;
-    const base = `user_${suffix}`;
-    let candidate = base;
-    let counter = 1;
-    while (await this.usersService.findByUsernameOrEmail(candidate)) {
-      candidate = `${base}_${counter}`;
-      counter++;
+    const base = suffix ? `user_${suffix}` : 'user';
+
+    while (true) {
+      const candidate = suffix ? `${base}_${randomBytes(3).toString('hex')}` : `${base}_${randomBytes(5).toString('hex')}`;
+      if (!(await this.usersService.findByUsernameOrEmail(candidate))) {
+        return candidate;
+      }
     }
-    return candidate;
   }
 
   async register(registerDto: RegisterDto) {
@@ -169,54 +169,23 @@ export class AuthService {
       throw new BadRequestException('نام و نام خانوادگی الزامی است.');
     }
 
-    if (!registerDto.phone || !registerDto.phone.trim()) {
-      throw new BadRequestException('وارد کردن شماره موبایل الزامی است.');
+    const cleanPhone = registerDto.phone?.trim() ? normalizePhoneNumber(registerDto.phone) : undefined;
+
+    if (cleanPhone) {
+      const existingPhone = await this.usersService.findByPhone(cleanPhone);
+      if (existingPhone) {
+        throw new ConflictException(
+          'حساب کاربری با این شماره موبایل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.',
+        );
+      }
     }
 
-    const cleanPhone = normalizePhoneNumber(registerDto.phone);
-
-    // Ensure phone is not already registered
-    const existingPhone = await this.usersService.findByPhone(cleanPhone);
-    if (existingPhone) {
-      throw new ConflictException(
-        'حساب کاربری با این شماره موبایل قبلاً در سیستم ثبت شده است. لطفاً وارد شوید.',
-      );
-    }
-
-    const cleanCode = this.normalizeOtpCode(registerDto.code || '');
-    if (!/^\d{5}$/.test(cleanCode)) {
-      throw new BadRequestException('کد تایید ۵ رقمی الزامی است.');
-    }
-    const registrationOtpFilter = {
-      phone: cleanPhone,
-      purpose: 'register',
-      isVerified: true,
-      used: false,
-      expiresAt: { $gt: new Date() },
-    };
-    const otpRecord = await this.otpModel
-      .findOne(registrationOtpFilter)
-      .sort({ createdAt: -1 })
-      .select('+codeHash')
-      .exec();
-
-    if (!otpRecord) {
-      throw new BadRequestException('کد تایید منقضی شده یا درخواستی یافت نشد. لطفاً مجدداً درخواست کد دهید.');
-    }
-    if (!this.otpMatches(otpRecord.codeHash, cleanCode, 'register', cleanPhone)) {
-      await this.recordOtpFailure(otpRecord._id, otpRecord.attempts);
-      throw new BadRequestException('کد تایید وارد شده نادرست است.');
-    }
-
-    // Check optional password
     const rawPassword = registerDto.password?.trim() || '';
-    if (rawPassword) {
-      if (rawPassword.length < 12) {
-        throw new BadRequestException('رمز عبور باید حداقل ۱۲ کاراکتر باشد.');
-      }
-      if (registerDto.confirmPassword && rawPassword !== registerDto.confirmPassword.trim()) {
-        throw new BadRequestException('رمز عبور با تکرار آن مطابقت ندارد.');
-      }
+    if (rawPassword.length < 12) {
+      throw new BadRequestException('رمز عبور باید حداقل ۱۲ کاراکتر باشد.');
+    }
+    if (rawPassword !== registerDto.confirmPassword?.trim()) {
+      throw new BadRequestException('رمز عبور با تکرار آن مطابقت ندارد.');
     }
 
     // Determine username (optional)
@@ -239,23 +208,14 @@ export class AuthService {
       }
     }
 
-    const consumedOtp = await this.otpModel.findOneAndUpdate(
-      { ...registrationOtpFilter, _id: otpRecord._id, codeHash: otpRecord.codeHash },
-      { $set: { used: true } },
-      { new: true },
-    ).exec();
-    if (!consumedOtp) {
-      throw new BadRequestException('کد تایید منقضی یا قبلاً استفاده شده است. لطفاً مجدداً درخواست کد دهید.');
-    }
-
     const createdUser = await this.usersService.create({
       fullName: registerDto.fullName.trim(),
       username,
       email: cleanEmail,
-      phone: cleanPhone,
-      password: rawPassword || undefined,
+      phone: cleanPhone || '',
+      password: rawPassword,
       birthDate: registerDto.birthDate,
-      isPhoneVerified: true,
+      isPhoneVerified: false,
     } as any);
 
     const userObj = createdUser.toObject();
@@ -266,7 +226,7 @@ export class AuthService {
       sub: userObj._id,
       username: userObj.username,
       email: userObj.email || '',
-      phone: userObj.phone || cleanPhone,
+      phone: userObj.phone || '',
       role: userObj.role,
       isVip: userObj.isVip,
       tokenVersion: createdUser.tokenVersion || 0,
