@@ -68,3 +68,4 @@ Thumbs.db
 *.sw?
 *.sublime-project
 *.sublime-workspace
+.vercel
