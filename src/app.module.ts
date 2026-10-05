@@ -17,6 +17,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { AdminModule } from './admin/admin.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { SeedModule } from './seed/seed.module';
+import { ConsultationChatModule } from './consultation-chat/consultation-chat.module';
 import { validateEnvironment } from './config/environment';
 
 @Module({
@@ -49,6 +50,7 @@ import { validateEnvironment } from './config/environment';
     UploadsModule,
     CatalogModule,
     SeedModule,
+    ConsultationChatModule,
   ],
 })
 export class AppModule {}
