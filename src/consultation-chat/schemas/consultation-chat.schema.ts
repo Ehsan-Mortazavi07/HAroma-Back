@@ -5,6 +5,7 @@ export type ConsultationConversationDocument = ConsultationConversation & Docume
 export type ConsultationMessageDocument = ConsultationMessage & Document;
 
 export enum ConsultationConversationStatus {
+  PENDING = 'pending',
   OPEN = 'open',
   CLOSED = 'closed',
 }
@@ -24,6 +25,27 @@ export class ConsultationConversation {
 
   @Prop({ trim: true, default: 'مشتری مهمان', maxlength: 80 })
   guestName!: string;
+
+  @Prop({ trim: true, required: true, maxlength: 120, default: 'مشاوره' })
+  subject!: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null, index: true })
+  userId?: Types.ObjectId | null;
+
+  @Prop({ trim: true, default: '', maxlength: 40 })
+  guestPhone!: string;
+
+  @Prop({ trim: true, lowercase: true, default: '', maxlength: 160 })
+  guestEmail!: string;
+
+  @Prop({ trim: true, default: '', maxlength: 40 })
+  guestUsername!: string;
+
+  @Prop({ trim: true, default: '', maxlength: 80 })
+  guestProvince!: string;
+
+  @Prop({ trim: true, default: '', maxlength: 80 })
+  guestCity!: string;
 
   @Prop({ type: String, enum: ConsultationConversationStatus, default: ConsultationConversationStatus.OPEN })
   status!: ConsultationConversationStatus;
@@ -48,6 +70,12 @@ export class ConsultationConversation {
 
   @Prop({ type: Number, default: 0, min: 0 })
   unreadForGuest!: number;
+
+  @Prop({ type: Date, default: null })
+  lastCustomerMessageReadAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  lastAdminMessageReadAt?: Date | null;
 }
 
 export const ConsultationConversationSchema = SchemaFactory.createForClass(ConsultationConversation);
@@ -57,6 +85,36 @@ ConsultationConversationSchema.index(
   { unique: true, partialFilterExpression: { status: ConsultationConversationStatus.OPEN } },
 );
 ConsultationConversationSchema.index({ status: 1, lastMessageAt: -1 });
+ConsultationConversationSchema.index(
+  { userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      userId: { $type: 'objectId' },
+      status: ConsultationConversationStatus.OPEN,
+    },
+  },
+);
+ConsultationConversationSchema.index(
+  { userId: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      userId: { $type: 'objectId' },
+      status: ConsultationConversationStatus.PENDING,
+    },
+  },
+);
+ConsultationConversationSchema.index(
+  { sessionTokenHash: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      userId: null,
+      status: ConsultationConversationStatus.PENDING,
+    },
+  },
+);
 
 @Schema({ timestamps: true })
 export class ConsultationMessage {

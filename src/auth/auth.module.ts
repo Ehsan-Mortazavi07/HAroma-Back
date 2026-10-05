@@ -10,6 +10,7 @@ import { UsersModule } from '../users/users.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Otp, OtpSchema } from './schemas/otp.schema';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, ThrottlerGuard],
-  exports: [AuthService],
+  providers: [AuthService, JwtStrategy, ThrottlerGuard, OptionalJwtAuthGuard],
+  exports: [AuthService, OptionalJwtAuthGuard],
 })
 export class AuthModule {}

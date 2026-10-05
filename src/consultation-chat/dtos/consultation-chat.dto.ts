@@ -2,8 +2,14 @@ import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validato
 import { ConsultationConversationStatus } from '../schemas/consultation-chat.schema';
 
 export class StartConsultationConversationDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  subject!: string;
+
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(80)
   guestName?: string;
 }
@@ -17,6 +23,6 @@ export class SendConsultationMessageDto {
 
 export class UpdateConsultationConversationStatusDto {
   @IsString()
-  @IsIn(Object.values(ConsultationConversationStatus))
-  status!: ConsultationConversationStatus;
+  @IsIn([ConsultationConversationStatus.OPEN, ConsultationConversationStatus.CLOSED])
+  status!: ConsultationConversationStatus.OPEN | ConsultationConversationStatus.CLOSED;
 }
