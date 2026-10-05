@@ -32,6 +32,11 @@ export class PublicConsultationChatController {
     return this.chatService.getCurrentConversation(sessionToken);
   }
 
+  @Get('conversations')
+  listCustomerConversations(@Headers('x-chat-session') sessionToken?: string) {
+    return this.chatService.listCustomerConversations(sessionToken);
+  }
+
   @Post('current')
   @Throttle({ default: { limit: 8, ttl: 60_000, blockDuration: 60_000 } })
   startConversation(

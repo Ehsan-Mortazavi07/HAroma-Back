@@ -100,6 +100,16 @@ export class ConsultationChatService {
     return conversation ? this.toConversationSummary(conversation) : null;
   }
 
+  async listCustomerConversations(sessionToken: string | undefined) {
+    const sessionTokenHash = this.getSessionHash(sessionToken);
+    const conversations = await this.conversationModel
+      .find({ sessionTokenHash })
+      .sort({ lastMessageAt: -1, createdAt: -1 })
+      .limit(100)
+      .exec();
+    return conversations.map((conversation) => this.toConversationSummary(conversation));
+  }
+
   async startConversation(sessionToken: string | undefined, guestName?: string) {
     const sessionTokenHash = this.getSessionHash(sessionToken);
     const normalizedName = guestName?.trim().slice(0, 80) || 'مشتری مهمان';
