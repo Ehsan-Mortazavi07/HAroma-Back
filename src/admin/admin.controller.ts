@@ -219,6 +219,23 @@ export class AdminController {
     });
   }
 
+  @Get('users/:id/orders')
+  async getUserOrders(
+    @Param('id') userId: string,
+    @Query('page') page?: number,
+    @Query('pageSize') pageSize?: number,
+    @Query('status') status?: OrderStatus,
+    @Query('q') q?: string,
+  ) {
+    return this.ordersService.findAll({
+      page: page ? Number(page) : 1,
+      pageSize: pageSize ? Number(pageSize) : 20,
+      status,
+      q,
+      userId,
+    });
+  }
+
   // Bulk operations MUST come before :id routes to prevent matching 'bulk' as :id
   @Patch('orders/bulk/status')
   async bulkUpdateOrdersStatus(@Body() dto: BulkSetOrderStatusDto) {

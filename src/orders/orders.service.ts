@@ -275,11 +275,14 @@ export class OrdersService {
     const skip = (page - 1) * pageSize;
 
     const filter: any = { deleted: false };
+    if (query?.userId !== undefined) {
+      if (!Types.ObjectId.isValid(query.userId)) {
+        throw new BadRequestException('شناسه کاربر معتبر نیست.');
+      }
+      filter.user = new Types.ObjectId(query.userId);
+    }
     if (query?.status) {
       filter.status = query.status;
-    }
-    if (query?.userId && Types.ObjectId.isValid(query.userId)) {
-      filter.user = new Types.ObjectId(query.userId);
     }
     const searchQuery = normalizeSearchQuery(query?.q, 100);
     if (searchQuery) {
