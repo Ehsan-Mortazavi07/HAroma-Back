@@ -92,7 +92,7 @@ export class BrandsService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const brand = await this.findById(id);
-    await this.brandModel.updateOne({ _id: brand._id }, { $set: { deleted: true } });
+    await this.brandModel.deleteOne({ _id: brand._id }).exec();
     return { success: true, message: 'برند با موفقیت حذف گردید.' };
   }
 
@@ -114,10 +114,7 @@ export class BrandsService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.brandModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.brandModel.deleteMany({ _id: { $in: validIds } }).exec();
+    return { success: true, modifiedCount: result.deletedCount };
   }
 }

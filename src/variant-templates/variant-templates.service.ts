@@ -54,7 +54,7 @@ export class VariantTemplatesService {
 
   async remove(id: string) {
     const template = await this.findOne(id);
-    await this.variantTemplateModel.updateOne({ _id: template._id }, { $set: { deleted: true } });
+    await this.variantTemplateModel.deleteOne({ _id: template._id }).exec();
     return { success: true, message: 'الگوی تنوع با موفقیت حذف شد.' };
   }
 
@@ -62,10 +62,7 @@ export class VariantTemplatesService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.variantTemplateModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.variantTemplateModel.deleteMany({ _id: { $in: validIds } }).exec();
+    return { success: true, modifiedCount: result.deletedCount };
   }
 }

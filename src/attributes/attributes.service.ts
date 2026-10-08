@@ -116,7 +116,7 @@ export class AttributesService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const attribute = await this.findById(id);
-    await this.attributeModel.updateOne({ _id: attribute._id }, { $set: { deleted: true } });
+    await this.attributeModel.deleteOne({ _id: attribute._id }).exec();
     return { success: true, message: 'ویژگی با موفقیت حذف شد.' };
   }
 
@@ -124,10 +124,7 @@ export class AttributesService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.attributeModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.attributeModel.deleteMany({ _id: { $in: validIds } }).exec();
+    return { success: true, modifiedCount: result.deletedCount };
   }
 }

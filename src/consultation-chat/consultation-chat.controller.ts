@@ -47,7 +47,7 @@ export class PublicConsultationChatController {
   }
 
   @Post('current')
-  @Throttle({ default: { limit: 8, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000, blockDuration: 60_000 } })
   startConversation(
     @Headers('x-chat-session') sessionToken: string | undefined,
     @Body() dto: StartConsultationConversationDto,
@@ -67,7 +67,7 @@ export class PublicConsultationChatController {
   }
 
   @Post(':conversationId/messages')
-  @Throttle({ default: { limit: 20, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 60, ttl: 60_000, blockDuration: 60_000 } })
   sendMessage(
     @Param('conversationId') conversationId: string,
     @Headers('x-chat-session') sessionToken: string | undefined,

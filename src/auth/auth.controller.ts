@@ -7,6 +7,7 @@ import {
   UseGuards,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
@@ -22,6 +23,7 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 
 @Controller('auth')
 @UseGuards(ThrottlerGuard)
@@ -61,20 +63,20 @@ export class AuthController {
   }
 
   @Post('login')
-  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000, blockDuration: 60_000 } })
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: Response) {
     return this.setSessionCookie(response, await this.authService.login(dto));
   }
 
   @Post('register')
-  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: Response) {
     return this.setSessionCookie(response, await this.authService.register(dto));
   }
 
   @Post('forgot-password')
-  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Req() req: Request, @Body() dto: ForgotPasswordDto) {
     const authHeader = this.getAuthHeader(req);
@@ -82,7 +84,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
-  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Req() req: Request, @Body() dto: ResetPasswordDto) {
     const authHeader = this.getAuthHeader(req);
@@ -90,14 +92,19 @@ export class AuthController {
   }
 
   @Post('otp/send')
-  @Throttle({ default: { limit: 3, ttl: 60_000, blockDuration: 120_000 } })
+  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
+  @UseGuards(OptionalJwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async sendOtp(@Body() dto: SendOtpDto) {
-    return this.authService.sendOtp(dto.phone, dto.purpose);
+  async sendOtp(@Body() dto: SendOtpDto, @CurrentUser() user?: any) {
+    const userId = user?._id?.toString?.() || user?.id?.toString?.();
+    if (dto.purpose === 'verify-phone' && !userId) {
+      throw new UnauthorizedException('برای تایید شماره موبایل ابتدا وارد حساب کاربری شوید.');
+    }
+    return this.authService.sendOtp(dto.phone, dto.purpose, userId);
   }
 
   @Post('otp/verify')
-  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000, blockDuration: 60_000 } })
   @HttpCode(HttpStatus.OK)
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
@@ -107,7 +114,7 @@ export class AuthController {
   }
 
   @Post('logout')
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   logout(@Res({ passthrough: true }) response: Response) {
     response.clearCookie('hatefaroma_token', {
@@ -120,7 +127,7 @@ export class AuthController {
   }
 
   @Post('otp/verify-phone')
-  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000, blockDuration: 60_000 } })
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async verifyUserPhone(@CurrentUser() user: any, @Body() dto: VerifyOtpDto) {

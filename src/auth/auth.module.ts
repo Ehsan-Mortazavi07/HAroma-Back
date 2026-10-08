@@ -16,7 +16,7 @@ import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
   imports: [
     UsersModule,
     PassportModule,
-    ThrottlerModule.forRoot([{ name: 'default', limit: 30, ttl: 60_000, blockDuration: 60_000 }]),
+    ThrottlerModule.forRoot([{ name: 'default', limit: 300, ttl: 60_000, blockDuration: 60_000 }]),
     MongooseModule.forFeature([
       { name: Otp.name, schema: OtpSchema },
       { name: User.name, schema: UserSchema },

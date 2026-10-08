@@ -466,16 +466,13 @@ export class ProductsService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.productModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.productModel.deleteMany({ _id: { $in: validIds } }).exec();
+    return { success: true, modifiedCount: result.deletedCount };
   }
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const product = await this.findById(id);
-    await this.productModel.updateOne({ _id: product._id }, { $set: { deleted: true } });
+    await this.productModel.deleteOne({ _id: product._id }).exec();
     return { success: true, message: 'محصول با موفقیت حذف شد.' };
   }
 

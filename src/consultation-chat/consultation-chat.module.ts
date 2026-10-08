@@ -17,7 +17,7 @@ import { AuthModule } from '../auth/auth.module';
 @Module({
   imports: [
     AuthModule,
-    ThrottlerModule.forRoot([{ name: 'default', limit: 120, ttl: 60_000 }]),
+    ThrottlerModule.forRoot([{ name: 'default', limit: 300, ttl: 60_000 }]),
     MongooseModule.forFeature([
       { name: ConsultationConversation.name, schema: ConsultationConversationSchema },
       { name: ConsultationMessage.name, schema: ConsultationMessageSchema },

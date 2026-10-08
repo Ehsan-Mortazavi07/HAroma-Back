@@ -136,7 +136,7 @@ export class CouponsService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const coupon = await this.findById(id);
-    await this.couponModel.updateOne({ _id: coupon._id }, { $set: { deleted: true } });
+    await this.couponModel.deleteOne({ _id: coupon._id }).exec();
     return { success: true, message: 'کد تخفیف با موفقیت حذف شد.' };
   }
 
@@ -158,10 +158,7 @@ export class CouponsService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.couponModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.couponModel.deleteMany({ _id: { $in: validIds } }).exec();
+    return { success: true, modifiedCount: result.deletedCount };
   }
 }

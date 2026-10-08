@@ -47,7 +47,7 @@ export class VipPlansService {
 
   async softDelete(id: string): Promise<{ success: boolean; message: string }> {
     const plan = await this.findById(id);
-    await this.vipPlanModel.updateOne({ _id: plan._id }, { $set: { deleted: true } });
+    await this.vipPlanModel.deleteOne({ _id: plan._id }).exec();
     return { success: true, message: 'پلن VIP با موفقیت حذف شد.' };
   }
 
@@ -69,10 +69,7 @@ export class VipPlansService {
     const validIds = ids
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
-    const result = await this.vipPlanModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.vipPlanModel.deleteMany({ _id: { $in: validIds } }).exec();
+    return { success: true, modifiedCount: result.deletedCount };
   }
 }

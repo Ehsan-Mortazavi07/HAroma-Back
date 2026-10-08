@@ -202,7 +202,7 @@ export class AuthService {
     // Check optional email
     const cleanEmail = registerDto.email?.trim() ? registerDto.email.trim().toLowerCase() : undefined;
     if (cleanEmail) {
-      const existingEmail = await this.userModel.findOne({ email: cleanEmail, deleted: false }).exec();
+      const existingEmail = await this.userModel.findOne({ email: cleanEmail, deleted: { $ne: true } }).exec();
       if (existingEmail) {
         throw new ConflictException('این آدرس ایمیل قبلاً توسط کاربر دیگری ثبت شده است.');
       }
@@ -496,7 +496,11 @@ export class AuthService {
     };
   }
 
-  async sendOtp(phone: string, purpose: 'login' | 'register' | 'verify-phone' = 'login') {
+  async sendOtp(
+    phone: string,
+    purpose: 'login' | 'register' | 'verify-phone' = 'login',
+    currentUserId?: string,
+  ) {
     this.ensureOtpDeliveryIsAvailable();
     const cleanPhone = normalizePhoneNumber(phone);
 
@@ -516,7 +520,14 @@ export class AuthService {
         );
       }
     } else if (purpose === 'verify-phone') {
-      const existingUser = await this.usersService.findByPhone(cleanPhone);
+      if (!currentUserId) {
+        throw new UnauthorizedException('برای تایید شماره موبایل ابتدا وارد حساب کاربری شوید.');
+      }
+      const existingUser = await this.userModel.findOne({
+        _id: { $ne: currentUserId },
+        phone: cleanPhone,
+        deleted: { $ne: true },
+      }).exec();
       if (existingUser) {
         throw new ConflictException(
           'این شماره موبایل قبلاً توسط حساب کاربری دیگری ثبت و تایید شده است.',
@@ -721,7 +732,7 @@ export class AuthService {
     const existingOther = await this.userModel.findOne({
       _id: { $ne: userId },
       phone: cleanPhone,
-      deleted: false,
+      deleted: { $ne: true },
     });
     if (existingOther) {
       throw new ConflictException('این شماره موبایل قبلاً توسط حساب کاربری دیگری تایید شده است.');

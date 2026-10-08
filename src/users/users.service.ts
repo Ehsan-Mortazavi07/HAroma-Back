@@ -29,6 +29,7 @@ export class UsersService {
 
     const existing = await this.userModel.findOne({
       $or: orConditions,
+      deleted: { $ne: true },
     });
 
     if (existing) {
@@ -43,6 +44,11 @@ export class UsersService {
       }
       throw new ConflictException('کاربری با این مشخصات از قبل وجود دارد.');
     }
+
+    // Older soft-deleted accounts may still hold the unique username/email indexes.
+    // They are already invisible to users, so remove only tombstones that conflict
+    // with this new account before saving it.
+    await this.userModel.deleteMany({ $or: orConditions, deleted: true }).exec();
 
     const hashedPassword = createUserDto.password?.trim()
       ? await bcrypt.hash(createUserDto.password.trim(), 12)
@@ -128,7 +134,7 @@ export class UsersService {
 
   async findByPhone(phone: string): Promise<UserDocument | null> {
     const cleanPhone = phone.trim();
-    return this.userModel.findOne({ phone: cleanPhone, deleted: false }).exec();
+    return this.userModel.findOne({ phone: cleanPhone, deleted: { $ne: true } }).exec();
   }
 
   async update(id: string, updateUserDto: UpdateUserDto, isAdmin: boolean = false): Promise<UserDocument> {
@@ -144,10 +150,12 @@ export class UsersService {
         const existingUser = await this.userModel.findOne({
           _id: { $ne: id },
           username: cleanUsername,
+          deleted: { $ne: true },
         });
         if (existingUser) {
           throw new ConflictException('این نام کاربری قبلاً توسط کاربر دیگری انتخاب شده است.');
         }
+        await this.userModel.deleteMany({ username: cleanUsername, deleted: true }).exec();
         user.username = cleanUsername;
       }
     }
@@ -160,11 +168,12 @@ export class UsersService {
           const existingEmail = await this.userModel.findOne({
             _id: { $ne: id },
             email: cleanEmail,
-            deleted: false,
+            deleted: { $ne: true },
           });
           if (existingEmail) {
             throw new ConflictException('این آدرس ایمیل قبلاً توسط کاربر دیگری ثبت شده است.');
           }
+          await this.userModel.deleteMany({ email: cleanEmail, deleted: true }).exec();
           user.email = cleanEmail;
           user.isEmailVerified = false;
         }
@@ -190,7 +199,7 @@ export class UsersService {
           const existingPhone = await this.userModel.findOne({
             _id: { $ne: id },
             phone: cleanPhone,
-            deleted: false,
+            deleted: { $ne: true },
           });
           if (existingPhone) {
             throw new ConflictException('این شماره تماس قبلاً توسط حساب کاربری دیگری ثبت شده است.');
@@ -317,7 +326,7 @@ export class UsersService {
       throw new BadRequestException('امکان حذف حساب کاربری جاری خودتان وجود ندارد.');
     }
 
-    await this.userModel.updateOne({ _id: user._id }, { $set: { deleted: true } });
+    await this.userModel.deleteOne({ _id: user._id }).exec();
     return { success: true, message: 'کاربر با موفقیت حذف شد.' };
   }
 
@@ -354,11 +363,8 @@ export class UsersService {
       return { success: true, modifiedCount: 0 };
     }
 
-    const result = await this.userModel.updateMany(
-      { _id: { $in: validIds }, deleted: false },
-      { $set: { deleted: true } },
-    );
-    return { success: true, modifiedCount: result.modifiedCount };
+    const result = await this.userModel.deleteMany({ _id: { $in: validIds } }).exec();
+    return { success: true, modifiedCount: result.deletedCount };
   }
 
   async countTotal() {
