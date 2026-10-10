@@ -1,7 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestExpressApplication } from '@nestjs/platform-express';
+import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
+import { createServer, type Server } from 'http';
 import type { Request, Response } from 'express';
 import { join } from 'path';
 import { json, urlencoded } from 'express';
@@ -9,8 +10,27 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ConsultationChatGateway } from './consultation-chat/consultation-chat.gateway';
 
-async function createApplication() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+/**
+ * Vercel needs the actual Node HTTP server exported for WebSocket upgrades.
+ * Nest's default Express adapter creates a separate server internally, so keep
+ * the pre-created server (the function export) attached to Nest's Express app.
+ */
+class VercelExpressAdapter extends ExpressAdapter {
+  constructor(private readonly functionServer: Server) {
+    super();
+    this.setHttpServer(functionServer);
+    functionServer.on('request', this.getInstance());
+  }
+
+  initHttpServer() {
+    this.setHttpServer(this.functionServer);
+  }
+}
+
+async function createApplication(httpAdapter?: ExpressAdapter) {
+  const app = httpAdapter
+    ? await NestFactory.create<NestExpressApplication>(AppModule, httpAdapter, { bodyParser: false })
+    : await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
 
   const configService = app.get(ConfigService);
   const allowedOrigins = configService.getOrThrow<string>('CORS_ORIGINS').split(',');
@@ -93,6 +113,30 @@ async function createApplication() {
 }
 
 let vercelApplication: Promise<NestExpressApplication> | undefined;
+const vercelSocketServer = process.env.VERCEL ? createServer() : undefined;
+const vercelAdapter = vercelSocketServer ? new VercelExpressAdapter(vercelSocketServer) : undefined;
+
+if (vercelAdapter) {
+  // Keep requests queued until Nest has installed its routes and Socket.IO
+  // gateway on the exported server. Vercel invokes the function after import,
+  // while Nest's module initialization completes asynchronously.
+  vercelAdapter.use((_request: unknown, response: any, next: () => void) => {
+    if (!vercelApplication) {
+      response.status(503).json({ message: 'سرویس در حال راه‌اندازی است.' });
+      return;
+    }
+    void vercelApplication.then(() => next()).catch(() => {
+      if (!response.headersSent) {
+        response.status(503).json({ message: 'راه‌اندازی سرویس ناموفق بود.' });
+      }
+    });
+  });
+  vercelApplication = createApplication(vercelAdapter).catch((error: unknown) => {
+    const logger = new Logger('HatefAroma-Bootstrap');
+    logger.error('Failed to initialize the Vercel HTTP and WebSocket server.', error instanceof Error ? error.stack : undefined);
+    throw error;
+  });
+}
 
 async function vercelHandler(request: Request, response: Response): Promise<void> {
   vercelApplication ??= createApplication();
@@ -101,7 +145,7 @@ async function vercelHandler(request: Request, response: Response): Promise<void
   expressApp(request, response);
 }
 
-export default vercelHandler;
+export default (vercelSocketServer || vercelHandler);
 
 async function bootstrap() {
   const logger = new Logger('HatefAroma-Bootstrap');
