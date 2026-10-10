@@ -57,6 +57,22 @@ type MessageView = {
   createdAt: Date;
 };
 
+export type RealtimeConversation = {
+  admin: ConversationSummary;
+  customer: ConversationSummary;
+};
+
+export type RealtimeMessage = {
+  admin: MessageView;
+  customer: MessageView;
+  conversation: RealtimeConversation;
+};
+
+export type RealtimeConversationStart = {
+  conversation: RealtimeConversation;
+  closedConversations: RealtimeConversation[];
+};
+
 @Injectable()
 export class ConsultationChatService {
   constructor(
@@ -136,6 +152,49 @@ export class ConsultationChatService {
     };
   }
 
+  private toRealtimeConversation(
+    conversation: ConsultationConversationDocument | Record<string, any>,
+  ): RealtimeConversation {
+    return {
+      admin: this.toConversationSummary(conversation),
+      customer: this.toConversationSummary(conversation, true),
+    };
+  }
+
+  async authorizeCustomerConversation(
+    conversationId: string,
+    sessionToken: string | undefined,
+    user?: UserDocument | null,
+  ) {
+    return this.findCustomerConversation(conversationId, sessionToken, user);
+  }
+
+  async authorizeAdminConversation(conversationId: string) {
+    return this.findAdminConversation(conversationId);
+  }
+
+  async getRealtimeConversationSummary(conversationId: string): Promise<RealtimeConversation | null> {
+    if (!Types.ObjectId.isValid(conversationId)) return null;
+    const conversation = await this.conversationModel.findById(conversationId).exec();
+    return conversation ? this.toRealtimeConversation(conversation) : null;
+  }
+
+  async markConversationRead(
+    conversationId: string,
+    reader: 'admin' | 'customer',
+  ): Promise<RealtimeConversation | null> {
+    if (!Types.ObjectId.isValid(conversationId)) return null;
+    const now = new Date();
+    const unreadField = reader === 'admin' ? 'unreadForAdmin' : 'unreadForGuest';
+    const readAtField = reader === 'admin' ? 'lastCustomerMessageReadAt' : 'lastAdminMessageReadAt';
+    const conversation = await this.conversationModel.findOneAndUpdate(
+      { _id: conversationId, [unreadField]: { $gt: 0 } },
+      { $set: { [unreadField]: 0, [readAtField]: now } },
+      { new: true },
+    ).exec();
+    return conversation ? this.toRealtimeConversation(conversation) : null;
+  }
+
   async getCurrentConversation(sessionToken: string | undefined, user?: UserDocument | null) {
     const sessionTokenHash = this.getSessionHash(sessionToken);
     const conversation = await this.conversationModel
@@ -160,6 +219,14 @@ export class ConsultationChatService {
     dto: StartConsultationConversationDto,
     user?: UserDocument | null,
   ) {
+    return (await this.startConversationRealtime(sessionToken, dto, user)).conversation.customer;
+  }
+
+  async startConversationRealtime(
+    sessionToken: string | undefined,
+    dto: StartConsultationConversationDto,
+    user?: UserDocument | null,
+  ): Promise<RealtimeConversationStart> {
     const sessionTokenHash = this.getSessionHash(sessionToken);
     const subject = dto.subject.trim();
     const userId = this.getUserId(user);
@@ -177,26 +244,34 @@ export class ConsultationChatService {
       .findOne({ ...ownerFilter, status: ConsultationConversationStatus.PENDING })
       .sort({ createdAt: -1 })
       .exec();
-    if (existingRequest) return this.toConversationSummary(existingRequest, true);
+    if (existingRequest) {
+      return { conversation: this.toRealtimeConversation(existingRequest), closedConversations: [] };
+    }
 
     const now = new Date();
-    await this.conversationModel.updateMany(
-      {
-        $or: [
-          { sessionTokenHash },
-          ...(userId ? [{ userId }] : []),
-        ],
-        status: ConsultationConversationStatus.OPEN,
+    const openFilter = {
+      $or: [
+        { sessionTokenHash },
+        ...(userId ? [{ userId }] : []),
+      ],
+      status: ConsultationConversationStatus.OPEN,
+    };
+    const openConversations = await this.conversationModel.find(openFilter).exec();
+    await this.conversationModel.updateMany(openFilter, {
+      $set: {
+        status: ConsultationConversationStatus.CLOSED,
+        closedAt: now,
+        closedByAdminId: null,
+        closedByAdminName: '',
       },
-      {
-        $set: {
-          status: ConsultationConversationStatus.CLOSED,
-          closedAt: now,
-          closedByAdminId: null,
-          closedByAdminName: '',
-        },
-      },
-    );
+    });
+    const closedConversations = openConversations.map((conversation) => {
+      conversation.status = ConsultationConversationStatus.CLOSED;
+      conversation.closedAt = now;
+      conversation.closedByAdminId = null;
+      conversation.closedByAdminName = '';
+      return this.toRealtimeConversation(conversation);
+    });
 
     try {
       const conversation = await this.conversationModel.create({
@@ -212,14 +287,19 @@ export class ConsultationChatService {
         status: ConsultationConversationStatus.PENDING,
         lastMessageAt: now,
       });
-      return this.toConversationSummary(conversation, true);
+      return {
+        conversation: this.toRealtimeConversation(conversation),
+        closedConversations,
+      };
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
       const pending = await this.conversationModel
         .findOne({ ...ownerFilter, status: ConsultationConversationStatus.PENDING })
         .sort({ createdAt: -1 })
         .exec();
-      if (pending) return this.toConversationSummary(pending, true);
+      if (pending) {
+        return { conversation: this.toRealtimeConversation(pending), closedConversations: [] };
+      }
       throw error;
     }
   }
@@ -274,6 +354,15 @@ export class ConsultationChatService {
     dto: SendConsultationMessageDto,
     user?: UserDocument | null,
   ) {
+    return (await this.sendCustomerMessageRealtime(conversationId, sessionToken, dto, user)).customer;
+  }
+
+  async sendCustomerMessageRealtime(
+    conversationId: string,
+    sessionToken: string | undefined,
+    dto: SendConsultationMessageDto,
+    user?: UserDocument | null,
+  ): Promise<RealtimeMessage> {
     const conversation = await this.findCustomerConversation(conversationId, sessionToken, user);
     if (conversation.status !== ConsultationConversationStatus.OPEN) {
       throw new BadRequestException(
@@ -292,14 +381,23 @@ export class ConsultationChatService {
       senderName: conversation.guestName,
       body,
     });
-    await this.conversationModel.updateOne(
+    const updatedConversation = await this.conversationModel.findOneAndUpdate(
       { _id: conversation._id, status: ConsultationConversationStatus.OPEN },
       {
         $set: { lastMessageText: body, lastMessageAt: message.createdAt },
         $inc: { unreadForAdmin: 1 },
       },
-    );
-    return this.toMessageView(message, true);
+      { new: true },
+    ).exec();
+    if (!updatedConversation) {
+      await this.messageModel.deleteOne({ _id: message._id }).exec();
+      throw new BadRequestException('این گفت‌وگو دیگر باز نیست. صفحه را تازه کن.');
+    }
+    return {
+      admin: this.toMessageView(message),
+      customer: this.toMessageView(message, true),
+      conversation: this.toRealtimeConversation(updatedConversation),
+    };
   }
 
   async listAdminConversations(status: string) {
@@ -347,6 +445,14 @@ export class ConsultationChatService {
   }
 
   async sendAdminMessage(conversationId: string, admin: UserDocument, dto: SendConsultationMessageDto) {
+    return (await this.sendAdminMessageRealtime(conversationId, admin, dto)).admin;
+  }
+
+  async sendAdminMessageRealtime(
+    conversationId: string,
+    admin: UserDocument,
+    dto: SendConsultationMessageDto,
+  ): Promise<RealtimeMessage> {
     if (admin?.role !== UserRole.ADMIN) throw new ForbiddenException('فقط ادمین می‌تواند به گفت‌وگوها پاسخ دهد.');
     const conversation = await this.findAdminConversation(conversationId);
     if (conversation.status !== ConsultationConversationStatus.OPEN) {
@@ -362,14 +468,23 @@ export class ConsultationChatService {
       senderName: admin.fullName || 'ادمین',
       body,
     });
-    await this.conversationModel.updateOne(
+    const updatedConversation = await this.conversationModel.findOneAndUpdate(
       { _id: conversation._id, status: ConsultationConversationStatus.OPEN },
       {
         $set: { lastMessageText: body, lastMessageAt: message.createdAt },
         $inc: { unreadForGuest: 1 },
       },
-    );
-    return this.toMessageView(message);
+      { new: true },
+    ).exec();
+    if (!updatedConversation) {
+      await this.messageModel.deleteOne({ _id: message._id }).exec();
+      throw new BadRequestException('این گفت‌وگو دیگر باز نیست. صفحه را تازه کن.');
+    }
+    return {
+      admin: this.toMessageView(message),
+      customer: this.toMessageView(message, true),
+      conversation: this.toRealtimeConversation(updatedConversation),
+    };
   }
 
   async updateAdminConversationStatus(
@@ -377,12 +492,21 @@ export class ConsultationChatService {
     status: ConsultationConversationStatus.OPEN | ConsultationConversationStatus.CLOSED,
     admin: UserDocument,
   ) {
+    return (await this.updateAdminConversationStatusRealtime(conversationId, status, admin)).conversation.admin;
+  }
+
+  async updateAdminConversationStatusRealtime(
+    conversationId: string,
+    status: ConsultationConversationStatus.OPEN | ConsultationConversationStatus.CLOSED,
+    admin: UserDocument,
+  ): Promise<{ conversation: RealtimeConversation; closedConversations: RealtimeConversation[] }> {
     if (admin?.role !== UserRole.ADMIN) {
       throw new ForbiddenException('فقط ادمین می‌تواند وضعیت گفت‌وگوها را تغییر دهد.');
     }
     const conversation = await this.findAdminConversation(conversationId);
     const adminId = this.getUserId(admin);
 
+    const closedConversations: RealtimeConversation[] = [];
     if (status === ConsultationConversationStatus.OPEN) {
       const ownerFilter = conversation.userId
         ? {
@@ -392,21 +516,28 @@ export class ConsultationChatService {
             ],
           }
         : { sessionTokenHash: conversation.sessionTokenHash, userId: null };
-      await this.conversationModel.updateMany(
-        {
-          ...ownerFilter,
-          _id: { $ne: conversation._id },
-          status: ConsultationConversationStatus.OPEN,
+      const siblingFilter = {
+        ...ownerFilter,
+        _id: { $ne: conversation._id },
+        status: ConsultationConversationStatus.OPEN,
+      };
+      const siblingConversations = await this.conversationModel.find(siblingFilter).exec();
+      const siblingClosedAt = new Date();
+      await this.conversationModel.updateMany(siblingFilter, {
+        $set: {
+          status: ConsultationConversationStatus.CLOSED,
+          closedAt: siblingClosedAt,
+          closedByAdminId: adminId,
+          closedByAdminName: String(admin.fullName || 'ادمین').slice(0, 80),
         },
-        {
-          $set: {
-            status: ConsultationConversationStatus.CLOSED,
-            closedAt: new Date(),
-            closedByAdminId: adminId,
-            closedByAdminName: String(admin.fullName || 'ادمین').slice(0, 80),
-          },
-        },
-      );
+      });
+      for (const sibling of siblingConversations) {
+        sibling.status = ConsultationConversationStatus.CLOSED;
+        sibling.closedAt = siblingClosedAt;
+        sibling.closedByAdminId = adminId;
+        sibling.closedByAdminName = String(admin.fullName || 'ادمین').slice(0, 80);
+        closedConversations.push(this.toRealtimeConversation(sibling));
+      }
       conversation.status = ConsultationConversationStatus.OPEN;
       conversation.closedAt = null;
       conversation.closedByAdminId = null;
@@ -421,7 +552,10 @@ export class ConsultationChatService {
     }
     conversation.unreadForAdmin = 0;
     await conversation.save();
-    return this.toConversationSummary(conversation);
+    return {
+      conversation: this.toRealtimeConversation(conversation),
+      closedConversations,
+    };
   }
 
   async deleteAdminConversation(conversationId: string, admin: UserDocument) {

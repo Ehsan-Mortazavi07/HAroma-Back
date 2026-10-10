@@ -7,6 +7,7 @@ import { join } from 'path';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { ConsultationChatGateway } from './consultation-chat/consultation-chat.gateway';
 
 async function createApplication() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
@@ -87,6 +88,7 @@ async function createApplication() {
   });
 
   await app.init();
+  await app.get(ConsultationChatGateway).initializeMongoAdapter();
   return app;
 }
 
