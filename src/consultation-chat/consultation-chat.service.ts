@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -9,6 +9,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { UserRole } from '../common/enums';
+import { UsersService } from '../users/users.service';
 import type { UserDocument } from '../users/schemas/user.schema';
 import {
   ConsultationConversation,
@@ -20,6 +21,7 @@ import {
 } from './schemas/consultation-chat.schema';
 import {
   SendConsultationMessageDto,
+  StartAdminConsultationConversationDto,
   StartConsultationConversationDto,
 } from './dtos/consultation-chat.dto';
 
@@ -71,6 +73,7 @@ export type RealtimeMessage = {
 export type RealtimeConversationStart = {
   conversation: RealtimeConversation;
   closedConversations: RealtimeConversation[];
+  reused?: boolean;
 };
 
 @Injectable()
@@ -80,6 +83,7 @@ export class ConsultationChatService {
     private readonly conversationModel: Model<ConsultationConversationDocument>,
     @InjectModel(ConsultationMessage.name)
     private readonly messageModel: Model<ConsultationMessageDocument>,
+    private readonly usersService: UsersService,
   ) {}
 
   private getSessionHash(sessionToken: string | undefined): string {
@@ -299,6 +303,107 @@ export class ConsultationChatService {
         .exec();
       if (pending) {
         return { conversation: this.toRealtimeConversation(pending), closedConversations: [] };
+      }
+      throw error;
+    }
+  }
+
+  async startAdminConversationRealtime(
+    dto: StartAdminConsultationConversationDto,
+    admin: UserDocument,
+  ): Promise<RealtimeConversationStart> {
+    if (admin?.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('فقط ادمین می‌تواند برای کاربر گفت‌وگو ایجاد کند.');
+    }
+    if (!Types.ObjectId.isValid(dto.userId)) {
+      throw new BadRequestException('شناسهٔ کاربر معتبر نیست.');
+    }
+    const subject = dto.subject.trim();
+    if (subject.length < 3 || subject.length > 120) {
+      throw new BadRequestException('موضوع گفت‌وگو باید بین ۳ تا ۱۲۰ حرف باشد.');
+    }
+
+    const user = await this.usersService.findById(dto.userId);
+    if (user.role === UserRole.ADMIN) {
+      throw new BadRequestException('گفت‌وگو فقط برای حساب کاربری مشتری قابل ایجاد است.');
+    }
+    const userId = this.getUserId(user);
+    if (!userId) throw new NotFoundException('کاربر پیدا نشد.');
+
+    const ownerFilter = { userId };
+    const existingOpen = await this.conversationModel
+      .findOne({ ...ownerFilter, status: ConsultationConversationStatus.OPEN })
+      .sort({ lastMessageAt: -1 })
+      .exec();
+    if (existingOpen) {
+      return {
+        conversation: this.toRealtimeConversation(existingOpen),
+        closedConversations: [],
+        reused: true,
+      };
+    }
+
+    const existingPending = await this.conversationModel
+      .findOne({ ...ownerFilter, status: ConsultationConversationStatus.PENDING })
+      .sort({ createdAt: -1 })
+      .exec();
+    if (existingPending) {
+      const promoted = await this.conversationModel.findOneAndUpdate(
+        { _id: existingPending._id, status: ConsultationConversationStatus.PENDING },
+        {
+          $set: {
+            status: ConsultationConversationStatus.OPEN,
+            subject,
+            lastMessageAt: new Date(),
+            closedAt: null,
+            closedByAdminId: null,
+            closedByAdminName: '',
+          },
+        },
+        { new: true },
+      ).exec();
+      if (promoted) {
+        return {
+          conversation: this.toRealtimeConversation(promoted),
+          closedConversations: [],
+          reused: true,
+        };
+      }
+    }
+
+    const sessionToken = randomBytes(32).toString('base64url');
+    const sessionTokenHash = createHash('sha256').update(sessionToken).digest('hex');
+    const now = new Date();
+    try {
+      const conversation = await this.conversationModel.create({
+        sessionTokenHash,
+        userId,
+        guestName: user.fullName?.trim() || user.username?.trim() || user.phone?.trim() || 'کاربر',
+        subject,
+        guestPhone: user.phone?.trim() || '',
+        guestEmail: user.email?.trim() || '',
+        guestUsername: user.username?.trim() || '',
+        guestProvince: user.province?.trim() || '',
+        guestCity: user.city?.trim() || '',
+        status: ConsultationConversationStatus.OPEN,
+        lastMessageAt: now,
+      });
+      return {
+        conversation: this.toRealtimeConversation(conversation),
+        closedConversations: [],
+        reused: false,
+      };
+    } catch (error: any) {
+      if (error?.code !== 11000) throw error;
+      const active = await this.conversationModel
+        .findOne({ ...ownerFilter, status: ConsultationConversationStatus.OPEN })
+        .exec();
+      if (active) {
+        return {
+          conversation: this.toRealtimeConversation(active),
+          closedConversations: [],
+          reused: true,
+        };
       }
       throw error;
     }

@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsMongoId, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { ConsultationConversationStatus } from '../schemas/consultation-chat.schema';
 
 export class StartConsultationConversationDto {
@@ -12,6 +12,16 @@ export class StartConsultationConversationDto {
   @MinLength(1)
   @MaxLength(80)
   guestName?: string;
+}
+
+export class StartAdminConsultationConversationDto {
+  @IsMongoId()
+  userId!: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  subject!: string;
 }
 
 export class SendConsultationMessageDto {

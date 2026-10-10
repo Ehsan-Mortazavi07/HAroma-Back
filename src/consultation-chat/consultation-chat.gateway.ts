@@ -20,6 +20,7 @@ import { UsersService } from '../users/users.service';
 import type { UserDocument } from '../users/schemas/user.schema';
 import {
   SendConsultationMessageDto,
+  StartAdminConsultationConversationDto,
   StartConsultationConversationDto,
   UpdateConsultationConversationStatusDto,
 } from './dtos/consultation-chat.dto';
@@ -28,6 +29,7 @@ import { ConsultationChatService, RealtimeConversation, RealtimeMessage } from '
 const ADMIN_INBOX_ROOM = 'consultation:admin-inbox';
 const ADMIN_CONVERSATION_ROOM = (id: string) => `consultation:admin:${id}`;
 const CUSTOMER_CONVERSATION_ROOM = (id: string) => `consultation:customer:${id}`;
+const CUSTOMER_USER_ROOM = (id: string) => `consultation:user:${id}`;
 const MESSAGE_RATE_LIMIT = 60;
 
 type SocketAck<T = unknown> =
@@ -102,6 +104,8 @@ export class ConsultationChatGateway
   handleConnection(client: ChatSocket) {
     if (client.data.role === 'admin') {
       void client.join(ADMIN_INBOX_ROOM);
+    } else if (client.data.user?._id) {
+      void client.join(CUSTOMER_USER_ROOM(String(client.data.user._id)));
     }
   }
 
@@ -231,7 +235,14 @@ export class ConsultationChatGateway
     const id = conversation.admin.id;
     this.namespace.to(ADMIN_INBOX_ROOM).emit('conversation:updated', conversation.admin);
     this.namespace.to(ADMIN_CONVERSATION_ROOM(id)).emit('conversation:updated', conversation.admin);
-    this.namespace.to(CUSTOMER_CONVERSATION_ROOM(id)).emit('conversation:updated', conversation.customer);
+    if (conversation.admin.userId) {
+      this.namespace
+        .to(CUSTOMER_CONVERSATION_ROOM(id))
+        .to(CUSTOMER_USER_ROOM(conversation.admin.userId))
+        .emit('conversation:updated', conversation.customer);
+    } else {
+      this.namespace.to(CUSTOMER_CONVERSATION_ROOM(id)).emit('conversation:updated', conversation.customer);
+    }
   }
 
   emitConversationUpdates(conversations: RealtimeConversation[]) {
@@ -247,8 +258,22 @@ export class ConsultationChatGateway
   publishRealtimeMessage(result: RealtimeMessage) {
     const id = result.admin.conversationId;
     this.namespace.to(ADMIN_CONVERSATION_ROOM(id)).emit('message:new', result.admin);
-    this.namespace.to(CUSTOMER_CONVERSATION_ROOM(id)).emit('message:new', result.customer);
+    if (result.conversation.admin.userId) {
+      this.namespace
+        .to(CUSTOMER_CONVERSATION_ROOM(id))
+        .to(CUSTOMER_USER_ROOM(result.conversation.admin.userId))
+        .emit('message:new', result.customer);
+    } else {
+      this.namespace.to(CUSTOMER_CONVERSATION_ROOM(id)).emit('message:new', result.customer);
+    }
     this.emitConversationUpdate(result.conversation);
+  }
+
+  private emitCustomerConversationCreated(conversation: RealtimeConversation) {
+    const userId = conversation.admin.userId;
+    if (userId) {
+      this.namespace.to(CUSTOMER_USER_ROOM(userId)).emit('conversation:created', conversation.customer);
+    }
   }
 
   @SubscribeMessage('conversation:join')
@@ -322,6 +347,42 @@ export class ConsultationChatGateway
       );
       this.emitConversationUpdates([...result.closedConversations, result.conversation]);
       this.acknowledge(ack, result.conversation.customer);
+    } catch (error) {
+      this.reject(ack, error);
+    }
+  }
+
+  @SubscribeMessage('conversation:create-for-user')
+  async createConversationForUser(
+    @ConnectedSocket() client: ChatSocket,
+    @MessageBody() payload: StartAdminConsultationConversationDto,
+    @Ack() ack?: (response: SocketAck<{ conversation: RealtimeConversation['admin']; reused: boolean }>) => void,
+  ) {
+    try {
+      if (client.data.role !== 'admin') {
+        throw new UnauthorizedException('فقط ادمین می‌تواند برای کاربر گفت‌وگو ایجاد کند.');
+      }
+      this.enforceRateLimit(client, 'conversation:create-for-user', 10);
+      if (
+        typeof payload?.userId !== 'string' ||
+        !/^[a-f\d]{24}$/i.test(payload.userId) ||
+        typeof payload?.subject !== 'string' ||
+        payload.subject.trim().length < 3 ||
+        payload.subject.length > 120
+      ) {
+        throw new BadRequestException('کاربر و موضوع گفت‌وگو را به‌درستی انتخاب کن.');
+      }
+
+      const result = await this.chatService.startAdminConversationRealtime(
+        payload,
+        client.data.user as UserDocument,
+      );
+      this.emitConversationUpdates([...result.closedConversations, result.conversation]);
+      this.emitCustomerConversationCreated(result.conversation);
+      this.acknowledge(ack, {
+        conversation: result.conversation.admin,
+        reused: Boolean(result.reused),
+      });
     } catch (error) {
       this.reject(ack, error);
     }
