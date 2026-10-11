@@ -1,4 +1,12 @@
-import { IsIn, IsMongoId, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { BulkIdsDto } from '../../common/dtos/admin-operation.dto';
 import { ConsultationConversationStatus } from '../schemas/consultation-chat.schema';
 
 export class StartConsultationConversationDto {
@@ -36,3 +44,9 @@ export class UpdateConsultationConversationStatusDto {
   @IsIn([ConsultationConversationStatus.OPEN, ConsultationConversationStatus.CLOSED])
   status!: ConsultationConversationStatus.OPEN | ConsultationConversationStatus.CLOSED;
 }
+
+export class BulkCloseConsultationConversationsDto extends BulkIdsDto {}
+
+export class BulkOpenConsultationConversationsDto extends BulkIdsDto {}
+
+export class BulkDeleteConsultationConversationsDto extends BulkIdsDto {}

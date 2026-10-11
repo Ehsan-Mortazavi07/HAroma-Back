@@ -19,6 +19,9 @@ import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 import { UserRole } from '../common/enums';
 import type { UserDocument } from '../users/schemas/user.schema';
 import {
+  BulkCloseConsultationConversationsDto,
+  BulkDeleteConsultationConversationsDto,
+  BulkOpenConsultationConversationsDto,
   SendConsultationMessageDto,
   StartConsultationConversationDto,
   UpdateConsultationConversationStatusDto,
@@ -101,6 +104,36 @@ export class AdminConsultationChatController {
   @Get('conversations')
   listConversations(@Query('status') status = 'open') {
     return this.chatService.listAdminConversations(status);
+  }
+
+  @Patch('conversations/bulk/close')
+  async bulkCloseConversations(
+    @CurrentUser() admin: UserDocument,
+    @Body() dto: BulkCloseConsultationConversationsDto,
+  ) {
+    const updated = await this.chatService.bulkCloseAdminConversations(dto.ids, admin);
+    this.chatGateway.emitConversationUpdates(updated);
+    return updated.map((conversation) => conversation.admin);
+  }
+
+  @Patch('conversations/bulk/open')
+  async bulkOpenConversations(
+    @CurrentUser() admin: UserDocument,
+    @Body() dto: BulkOpenConsultationConversationsDto,
+  ) {
+    const updated = await this.chatService.bulkOpenAdminConversations(dto.ids, admin);
+    this.chatGateway.emitConversationUpdates(updated);
+    return updated.map((conversation) => conversation.admin);
+  }
+
+  @Delete('conversations/bulk')
+  async bulkDeleteConversations(
+    @CurrentUser() admin: UserDocument,
+    @Body() dto: BulkDeleteConsultationConversationsDto,
+  ) {
+    const deleted = await this.chatService.bulkDeleteAdminConversations(dto.ids, admin);
+    deleted.ids.forEach((id) => this.chatGateway.emitConversationDeleted(id));
+    return deleted;
   }
 
   @Get('conversations/:conversationId/messages')

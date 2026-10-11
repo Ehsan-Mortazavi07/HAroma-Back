@@ -521,6 +521,137 @@ export class ConsultationChatService {
     return conversations.map((conversation) => this.toConversationSummary(conversation));
   }
 
+  async bulkCloseAdminConversations(ids: string[], admin: UserDocument) {
+    if (admin?.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('فقط ادمین می‌تواند وضعیت گفت‌وگوها را تغییر دهد.');
+    }
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some((id) => !Types.ObjectId.isValid(id))) {
+      throw new BadRequestException('فهرست گفت‌وگوها معتبر نیست.');
+    }
+    const uniqueIds = [...new Set(ids)];
+
+    const objectIds = uniqueIds.map((id) => new Types.ObjectId(id));
+    const conversations = await this.conversationModel
+      .find({ _id: { $in: objectIds }, status: { $ne: ConsultationConversationStatus.CLOSED } })
+      .exec();
+    if (!conversations.length) return [];
+
+    const closedAt = new Date();
+    const closedByAdminId = this.getUserId(admin);
+    const closedByAdminName = String(admin.fullName || 'ادمین').slice(0, 80);
+    await this.conversationModel.updateMany(
+      {
+        _id: { $in: conversations.map((conversation) => conversation._id) },
+        status: { $ne: ConsultationConversationStatus.CLOSED },
+      },
+      {
+        $set: {
+          status: ConsultationConversationStatus.CLOSED,
+          closedAt,
+          closedByAdminId,
+          closedByAdminName,
+          unreadForAdmin: 0,
+        },
+      },
+    ).exec();
+
+    return conversations.map((conversation) => {
+      conversation.status = ConsultationConversationStatus.CLOSED;
+      conversation.closedAt = closedAt;
+      conversation.closedByAdminId = closedByAdminId;
+      conversation.closedByAdminName = closedByAdminName;
+      conversation.unreadForAdmin = 0;
+      conversation.updatedAt = closedAt;
+      return this.toRealtimeConversation(conversation);
+    });
+  }
+
+  async bulkOpenAdminConversations(ids: string[], admin: UserDocument) {
+    if (admin?.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('فقط ادمین می‌تواند وضعیت گفت‌وگوها را تغییر دهد.');
+    }
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some((id) => !Types.ObjectId.isValid(id))) {
+      throw new BadRequestException('فهرست گفت‌وگوها معتبر نیست.');
+    }
+
+    const objectIds = ids.map((id) => new Types.ObjectId(id));
+    const conversations = await this.conversationModel
+      .find({ _id: { $in: objectIds }, status: { $in: [ConsultationConversationStatus.CLOSED, ConsultationConversationStatus.PENDING] } })
+      .exec();
+    if (!conversations.length) return [];
+
+    // The schema allows one open conversation per user/session. Reject a batch that
+    // tries to reopen multiple chats for the same owner instead of partially applying it.
+    const selectedOwners = new Set<string>();
+    for (const conversation of conversations) {
+      const ownerKeys = [
+        `session:${conversation.sessionTokenHash}`,
+        ...(conversation.userId ? [`user:${String(conversation.userId)}`] : []),
+      ];
+      if (ownerKeys.some((ownerKey) => selectedOwners.has(ownerKey))) {
+        throw new BadRequestException('برای هر کاربر فقط یک گفت‌وگو را در هر نوبت بازگشایی گروهی انتخاب کن.');
+      }
+      ownerKeys.forEach((ownerKey) => selectedOwners.add(ownerKey));
+    }
+
+    const ownerFilters = conversations.map((conversation) => conversation.userId
+      ? { $or: [{ userId: conversation.userId }, { sessionTokenHash: conversation.sessionTokenHash }] }
+      : { sessionTokenHash: conversation.sessionTokenHash, userId: null });
+    const selectedObjectIds = conversations.map((conversation) => conversation._id);
+    const siblingFilter = {
+      $or: ownerFilters,
+      _id: { $nin: selectedObjectIds },
+      status: ConsultationConversationStatus.OPEN,
+    };
+    const siblings = await this.conversationModel.find(siblingFilter).exec();
+    const adminId = this.getUserId(admin);
+    const adminName = String(admin.fullName || 'ادمین').slice(0, 80);
+    const now = new Date();
+
+    if (siblings.length) {
+      await this.conversationModel.updateMany(
+        { _id: { $in: siblings.map((conversation) => conversation._id) }, status: ConsultationConversationStatus.OPEN },
+        { $set: {
+          status: ConsultationConversationStatus.CLOSED,
+          closedAt: now,
+          closedByAdminId: adminId,
+          closedByAdminName: adminName,
+          unreadForAdmin: 0,
+        } },
+      ).exec();
+    }
+    await this.conversationModel.updateMany(
+      { _id: { $in: selectedObjectIds }, status: { $in: [ConsultationConversationStatus.CLOSED, ConsultationConversationStatus.PENDING] } },
+      { $set: {
+        status: ConsultationConversationStatus.OPEN,
+        closedAt: null,
+        closedByAdminId: null,
+        closedByAdminName: '',
+        unreadForAdmin: 0,
+      } },
+    ).exec();
+
+    const changedIds = [...siblings.map((conversation) => conversation._id), ...selectedObjectIds];
+    const changed = await this.conversationModel.find({ _id: { $in: changedIds } }).exec();
+    return changed.map((conversation) => this.toRealtimeConversation(conversation));
+  }
+
+  async bulkDeleteAdminConversations(ids: string[], admin: UserDocument) {
+    if (admin?.role !== UserRole.ADMIN) throw new ForbiddenException('فقط ادمین می‌تواند گفت‌وگوها را حذف کند.');
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some((id) => !Types.ObjectId.isValid(id))) {
+      throw new BadRequestException('فهرست گفت‌وگوها معتبر نیست.');
+    }
+
+    const objectIds = [...new Set(ids)].map((id) => new Types.ObjectId(id));
+    const conversations = await this.conversationModel.find({ _id: { $in: objectIds } }).select({ _id: 1 }).exec();
+    const existingIds = conversations.map((conversation) => conversation._id);
+    if (!existingIds.length) return { ids: [], deleted: true };
+
+    await this.messageModel.deleteMany({ conversationId: { $in: existingIds } }).exec();
+    await this.conversationModel.deleteMany({ _id: { $in: existingIds } }).exec();
+    return { ids: existingIds.map(String), deleted: true };
+  }
+
   private async findAdminConversation(conversationId: string) {
     if (!Types.ObjectId.isValid(conversationId)) throw new NotFoundException('گفت‌وگو پیدا نشد.');
     const conversation = await this.conversationModel.findById(conversationId).exec();
