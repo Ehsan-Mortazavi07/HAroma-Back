@@ -53,6 +53,17 @@ export class PublicConsultationChatController {
     return this.chatService.listCustomerConversations(sessionToken, user);
   }
 
+  @Post('claim')
+  @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
+  async claimGuestConversations(
+    @Headers('x-chat-session') sessionToken: string | undefined,
+    @CurrentUser() user?: UserDocument,
+  ) {
+    const result = await this.chatService.claimGuestConversations(sessionToken, user);
+    this.chatGateway.emitConversationUpdates(result.conversations);
+    return { claimedCount: result.claimedCount };
+  }
+
   @Post('current')
   @Throttle({ default: { limit: 20, ttl: 60_000, blockDuration: 60_000 } })
   async startConversation(

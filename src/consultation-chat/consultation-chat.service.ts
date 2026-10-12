@@ -3,7 +3,9 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -77,7 +79,9 @@ export type RealtimeConversationStart = {
 };
 
 @Injectable()
-export class ConsultationChatService {
+export class ConsultationChatService implements OnModuleInit {
+  private readonly logger = new Logger(ConsultationChatService.name);
+
   constructor(
     @InjectModel(ConsultationConversation.name)
     private readonly conversationModel: Model<ConsultationConversationDocument>,
@@ -85,6 +89,47 @@ export class ConsultationChatService {
     private readonly messageModel: Model<ConsultationMessageDocument>,
     private readonly usersService: UsersService,
   ) {}
+
+  async onModuleInit() {
+    const collection = this.conversationModel.collection;
+    await this.conversationModel.createCollection();
+    const indexes = await collection.indexes();
+    const legacyIndexes = indexes.filter((index) => {
+      const partialFilter = index.partialFilterExpression as Record<string, unknown> | undefined;
+      const key = index.key as Record<string, number> | undefined;
+      const isLegacyUniqueOpenIndex = Boolean(
+        index.unique
+        && partialFilter?.status === ConsultationConversationStatus.OPEN
+        && (key?.userId === 1 || key?.sessionTokenHash === 1),
+      );
+      const isUserLookupIndex = Boolean(
+        key?.userId === 1
+        && Object.keys(key).length === 1,
+      );
+      const isCurrentUserLookupIndex = Boolean(
+        isUserLookupIndex
+        && index.name === 'consultation_user_lookup'
+        && !index.unique
+        && !partialFilter,
+      );
+
+      return isLegacyUniqueOpenIndex || (isUserLookupIndex && !isCurrentUserLookupIndex);
+    });
+
+    for (const index of legacyIndexes) {
+      if (!index.name) continue;
+      try {
+        await collection.dropIndex(index.name);
+      } catch (error: any) {
+        if (error?.code !== 27 && error?.codeName !== 'IndexNotFound') throw error;
+      }
+    }
+
+    await this.conversationModel.createIndexes();
+    if (legacyIndexes.length) {
+      this.logger.log(`Migrated ${legacyIndexes.length} legacy consultation-chat index(es); admins may now approve multiple open chats per customer.`);
+    }
+  }
 
   private getSessionHash(sessionToken: string | undefined): string {
     if (!sessionToken || !/^[A-Za-z0-9_-]{40,100}$/.test(sessionToken)) {
@@ -218,6 +263,61 @@ export class ConsultationChatService {
     return conversations.map((conversation) => this.toConversationSummary(conversation, true));
   }
 
+  async claimGuestConversations(sessionToken: string | undefined, user?: UserDocument | null) {
+    const sessionTokenHash = this.getSessionHash(sessionToken);
+    const userId = this.getUserId(user);
+    if (!userId || user?.deleted) {
+      throw new UnauthorizedException('برای انتقال گفتگوهای مهمان ابتدا وارد حساب کاربری شو.');
+    }
+
+    const guestConversations = await this.conversationModel
+      .find({ sessionTokenHash, userId: null })
+      .sort({ createdAt: 1 })
+      .exec();
+    if (!guestConversations.length) return { claimedCount: 0, conversations: [] as RealtimeConversation[] };
+
+    const guestPending = guestConversations.find(
+      (conversation) => conversation.status === ConsultationConversationStatus.PENDING,
+    );
+    const existingPending = guestPending
+      ? await this.conversationModel
+          .findOne({ userId, status: ConsultationConversationStatus.PENDING })
+          .sort({ createdAt: -1 })
+          .exec()
+      : null;
+    const closedPendingIds: Types.ObjectId[] = [];
+    if (guestPending && existingPending) {
+      const pendingToClose = guestPending.createdAt >= existingPending.createdAt
+        ? existingPending
+        : guestPending;
+      await this.conversationModel.updateOne(
+        { _id: pendingToClose._id, status: ConsultationConversationStatus.PENDING },
+        { $set: {
+          status: ConsultationConversationStatus.CLOSED,
+          closedAt: new Date(),
+          closedByAdminId: null,
+          closedByAdminName: '',
+          unreadForAdmin: 0,
+        } },
+      ).exec();
+      closedPendingIds.push(pendingToClose._id);
+    }
+
+    const guestIds = guestConversations.map((conversation) => conversation._id);
+    const claimedResult = await this.conversationModel.updateMany(
+      { _id: { $in: guestIds }, sessionTokenHash, userId: null },
+      { $set: { userId } },
+    ).exec();
+    const changedIds = [...new Set([...guestIds, ...closedPendingIds].map(String))]
+      .map((id) => new Types.ObjectId(id));
+    const changed = await this.conversationModel.find({ _id: { $in: changedIds } }).exec();
+
+    return {
+      claimedCount: claimedResult.modifiedCount || 0,
+      conversations: changed.map((conversation) => this.toRealtimeConversation(conversation)),
+    };
+  }
+
   async startConversation(
     sessionToken: string | undefined,
     dto: StartConsultationConversationDto,
@@ -252,6 +352,9 @@ export class ConsultationChatService {
       .exec();
 
     const now = new Date();
+    const initialStatus = user?.role === UserRole.ADMIN
+      ? ConsultationConversationStatus.OPEN
+      : ConsultationConversationStatus.PENDING;
     const closedConversations: RealtimeConversation[] = [];
     if (existingRequest) {
       const closedPendingRequest = await this.conversationModel.findOneAndUpdate(
@@ -303,7 +406,7 @@ export class ConsultationChatService {
         guestUsername: user?.username?.trim() || '',
         guestProvince: user?.province?.trim() || '',
         guestCity: user?.city?.trim() || '',
-        status: ConsultationConversationStatus.PENDING,
+        status: initialStatus,
         lastMessageAt: now,
       });
       return {
@@ -611,47 +714,10 @@ export class ConsultationChatService {
       .find({ _id: { $in: objectIds }, status: { $in: [ConsultationConversationStatus.CLOSED, ConsultationConversationStatus.PENDING] } })
       .exec();
     if (!conversations.length) return [];
-
-    // The schema allows one open conversation per user/session. Reject a batch that
-    // tries to reopen multiple chats for the same owner instead of partially applying it.
-    const selectedOwners = new Set<string>();
-    for (const conversation of conversations) {
-      const ownerKeys = [
-        `session:${conversation.sessionTokenHash}`,
-        ...(conversation.userId ? [`user:${String(conversation.userId)}`] : []),
-      ];
-      if (ownerKeys.some((ownerKey) => selectedOwners.has(ownerKey))) {
-        throw new BadRequestException('برای هر کاربر فقط یک گفت‌وگو را در هر نوبت بازگشایی گروهی انتخاب کن.');
-      }
-      ownerKeys.forEach((ownerKey) => selectedOwners.add(ownerKey));
-    }
-
-    const ownerFilters = conversations.map((conversation) => conversation.userId
-      ? { $or: [{ userId: conversation.userId }, { sessionTokenHash: conversation.sessionTokenHash }] }
-      : { sessionTokenHash: conversation.sessionTokenHash, userId: null });
     const selectedObjectIds = conversations.map((conversation) => conversation._id);
-    const siblingFilter = {
-      $or: ownerFilters,
-      _id: { $nin: selectedObjectIds },
-      status: ConsultationConversationStatus.OPEN,
-    };
-    const siblings = await this.conversationModel.find(siblingFilter).exec();
     const adminId = this.getUserId(admin);
     const adminName = String(admin.fullName || 'ادمین').slice(0, 80);
     const now = new Date();
-
-    if (siblings.length) {
-      await this.conversationModel.updateMany(
-        { _id: { $in: siblings.map((conversation) => conversation._id) }, status: ConsultationConversationStatus.OPEN },
-        { $set: {
-          status: ConsultationConversationStatus.CLOSED,
-          closedAt: now,
-          closedByAdminId: adminId,
-          closedByAdminName: adminName,
-          unreadForAdmin: 0,
-        } },
-      ).exec();
-    }
     await this.conversationModel.updateMany(
       { _id: { $in: selectedObjectIds }, status: { $in: [ConsultationConversationStatus.CLOSED, ConsultationConversationStatus.PENDING] } },
       { $set: {
@@ -663,8 +729,7 @@ export class ConsultationChatService {
       } },
     ).exec();
 
-    const changedIds = [...siblings.map((conversation) => conversation._id), ...selectedObjectIds];
-    const changed = await this.conversationModel.find({ _id: { $in: changedIds } }).exec();
+    const changed = await this.conversationModel.find({ _id: { $in: selectedObjectIds } }).exec();
     return changed.map((conversation) => this.toRealtimeConversation(conversation));
   }
 
@@ -776,36 +841,6 @@ export class ConsultationChatService {
 
     const closedConversations: RealtimeConversation[] = [];
     if (status === ConsultationConversationStatus.OPEN) {
-      const ownerFilter = conversation.userId
-        ? {
-            $or: [
-              { userId: conversation.userId },
-              { sessionTokenHash: conversation.sessionTokenHash },
-            ],
-          }
-        : { sessionTokenHash: conversation.sessionTokenHash, userId: null };
-      const siblingFilter = {
-        ...ownerFilter,
-        _id: { $ne: conversation._id },
-        status: ConsultationConversationStatus.OPEN,
-      };
-      const siblingConversations = await this.conversationModel.find(siblingFilter).exec();
-      const siblingClosedAt = new Date();
-      await this.conversationModel.updateMany(siblingFilter, {
-        $set: {
-          status: ConsultationConversationStatus.CLOSED,
-          closedAt: siblingClosedAt,
-          closedByAdminId: adminId,
-          closedByAdminName: String(admin.fullName || 'ادمین').slice(0, 80),
-        },
-      });
-      for (const sibling of siblingConversations) {
-        sibling.status = ConsultationConversationStatus.CLOSED;
-        sibling.closedAt = siblingClosedAt;
-        sibling.closedByAdminId = adminId;
-        sibling.closedByAdminName = String(admin.fullName || 'ادمین').slice(0, 80);
-        closedConversations.push(this.toRealtimeConversation(sibling));
-      }
       conversation.status = ConsultationConversationStatus.OPEN;
       conversation.closedAt = null;
       conversation.closedByAdminId = null;

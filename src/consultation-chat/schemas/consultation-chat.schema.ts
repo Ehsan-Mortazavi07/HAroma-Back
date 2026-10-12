@@ -15,7 +15,7 @@ export enum ConsultationMessageSender {
   ADMIN = 'admin',
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, autoIndex: false })
 export class ConsultationConversation {
   createdAt!: Date;
   updatedAt!: Date;
@@ -29,7 +29,7 @@ export class ConsultationConversation {
   @Prop({ trim: true, required: true, maxlength: 120, default: 'مشاوره' })
   subject!: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', default: null, index: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
   userId?: Types.ObjectId | null;
 
   @Prop({ trim: true, default: '', maxlength: 40 })
@@ -80,21 +80,8 @@ export class ConsultationConversation {
 
 export const ConsultationConversationSchema = SchemaFactory.createForClass(ConsultationConversation);
 ConsultationConversationSchema.index({ sessionTokenHash: 1, createdAt: -1 });
-ConsultationConversationSchema.index(
-  { sessionTokenHash: 1 },
-  { unique: true, partialFilterExpression: { status: ConsultationConversationStatus.OPEN } },
-);
 ConsultationConversationSchema.index({ status: 1, lastMessageAt: -1 });
-ConsultationConversationSchema.index(
-  { userId: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      userId: { $type: 'objectId' },
-      status: ConsultationConversationStatus.OPEN,
-    },
-  },
-);
+ConsultationConversationSchema.index({ userId: 1 }, { name: 'consultation_user_lookup' });
 ConsultationConversationSchema.index(
   { userId: 1, status: 1 },
   {
