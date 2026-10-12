@@ -235,7 +235,9 @@ export class ConsultationChatService {
     const subject = dto.subject.trim();
     const userId = this.getUserId(user);
     const fullName = user?.fullName?.trim();
-    const guestName = userId ? fullName : dto.guestName?.trim();
+    const guestName = userId
+      ? fullName || user?.username?.trim() || user?.phone?.trim()
+      : dto.guestName?.trim();
     if (!subject || subject.length < 3) {
       throw new BadRequestException('موضوع گفت‌وگو را بنویس.');
     }
@@ -248,11 +250,24 @@ export class ConsultationChatService {
       .findOne({ ...ownerFilter, status: ConsultationConversationStatus.PENDING })
       .sort({ createdAt: -1 })
       .exec();
-    if (existingRequest) {
-      return { conversation: this.toRealtimeConversation(existingRequest), closedConversations: [] };
-    }
 
     const now = new Date();
+    const closedConversations: RealtimeConversation[] = [];
+    if (existingRequest) {
+      const closedPendingRequest = await this.conversationModel.findOneAndUpdate(
+        { _id: existingRequest._id, status: ConsultationConversationStatus.PENDING },
+        { $set: {
+          status: ConsultationConversationStatus.CLOSED,
+          closedAt: now,
+          closedByAdminId: null,
+          closedByAdminName: '',
+          unreadForAdmin: 0,
+        } },
+        { new: true },
+      ).exec();
+      if (closedPendingRequest) closedConversations.push(this.toRealtimeConversation(closedPendingRequest));
+    }
+
     const openFilter = {
       $or: [
         { sessionTokenHash },
@@ -269,13 +284,13 @@ export class ConsultationChatService {
         closedByAdminName: '',
       },
     });
-    const closedConversations = openConversations.map((conversation) => {
+    closedConversations.push(...openConversations.map((conversation) => {
       conversation.status = ConsultationConversationStatus.CLOSED;
       conversation.closedAt = now;
       conversation.closedByAdminId = null;
       conversation.closedByAdminName = '';
       return this.toRealtimeConversation(conversation);
-    });
+    }));
 
     try {
       const conversation = await this.conversationModel.create({
@@ -302,7 +317,7 @@ export class ConsultationChatService {
         .sort({ createdAt: -1 })
         .exec();
       if (pending) {
-        return { conversation: this.toRealtimeConversation(pending), closedConversations: [] };
+        return { conversation: this.toRealtimeConversation(pending), closedConversations };
       }
       throw error;
     }
@@ -519,6 +534,23 @@ export class ConsultationChatService {
       .limit(100)
       .exec();
     return conversations.map((conversation) => this.toConversationSummary(conversation));
+  }
+
+  async listAdminUserConversations(userId: string) {
+    if (!Types.ObjectId.isValid(userId)) throw new BadRequestException('شناسهٔ کاربر معتبر نیست.');
+    const conversations = await this.conversationModel
+      .find({ userId: new Types.ObjectId(userId) })
+      .select('_id subject status createdAt lastMessageAt')
+      .sort({ lastMessageAt: -1 })
+      .limit(200)
+      .exec();
+    return conversations.map((conversation) => ({
+      id: String(conversation._id),
+      subject: conversation.subject || 'مشاوره',
+      status: conversation.status,
+      createdAt: conversation.createdAt,
+      lastMessageAt: conversation.lastMessageAt || conversation.createdAt,
+    }));
   }
 
   async bulkCloseAdminConversations(ids: string[], admin: UserDocument) {

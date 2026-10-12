@@ -106,6 +106,11 @@ export class AdminConsultationChatController {
     return this.chatService.listAdminConversations(status);
   }
 
+  @Get('users/:userId/conversations')
+  listUserConversations(@Param('userId') userId: string) {
+    return this.chatService.listAdminUserConversations(userId);
+  }
+
   @Patch('conversations/bulk/close')
   async bulkCloseConversations(
     @CurrentUser() admin: UserDocument,

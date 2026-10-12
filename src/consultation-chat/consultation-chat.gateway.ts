@@ -172,7 +172,11 @@ export class ConsultationChatGateway
     }
 
     if (user?.role === UserRole.ADMIN) {
-      client.data.role = 'admin';
+      const customerChatMode = client.handshake.auth?.chatMode === 'customer';
+      if (customerChatMode && !/^[A-Za-z0-9_-]{40,100}$/.test(sessionToken)) {
+        throw new UnauthorizedException('نشست گفت‌وگو معتبر نیست. صفحه را تازه‌سازی کن.');
+      }
+      client.data.role = customerChatMode ? 'customer' : 'admin';
       client.data.user = user;
       client.data.sessionToken = sessionToken || undefined;
       return;
@@ -332,7 +336,7 @@ export class ConsultationChatGateway
     @Ack() ack?: (response: SocketAck<RealtimeConversation['customer']>) => void,
   ) {
     try {
-      if (client.data.role !== 'customer') throw new Error('درخواست مشاوره از حساب ادمین قابل ثبت نیست.');
+      if (client.data.role !== 'customer') throw new Error('برای ثبت درخواست، از بخش مشاورهٔ سایت وارد شو.');
       this.enforceRateLimit(client, 'conversation:start', 10);
       if (typeof dto?.subject !== 'string' || dto.subject.trim().length < 3 || dto.subject.length > 120) {
         throw new BadRequestException('موضوع گفت‌وگو را بنویس (۳ تا ۱۲۰ حرف).');
