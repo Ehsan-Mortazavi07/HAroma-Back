@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -16,6 +17,8 @@ import type { UserDocument } from '../users/schemas/user.schema';
 import {
   ConsultationConversation,
   ConsultationConversationDocument,
+  ConsultationConversationHistoryAction,
+  ConsultationConversationHistoryActorRole,
   ConsultationConversationStatus,
   ConsultationMessage,
   ConsultationMessageDocument,
@@ -47,8 +50,19 @@ type ConversationSummary = {
   closedAt: Date | null;
   closedByAdminId: string | null;
   closedByAdminName: string;
+  statusHistory: ConversationHistoryEvent[];
   createdAt: Date;
   updatedAt: Date;
+};
+
+type ConversationHistoryEvent = {
+  action: ConsultationConversationHistoryAction;
+  fromStatus: ConsultationConversationStatus | null;
+  toStatus: ConsultationConversationStatus | null;
+  actorRole: ConsultationConversationHistoryActorRole;
+  actorId: string | null;
+  actorName: string;
+  occurredAt: Date;
 };
 
 type MessageView = {
@@ -143,6 +157,14 @@ export class ConsultationChatService implements OnModuleInit {
     return id && Types.ObjectId.isValid(String(id)) ? new Types.ObjectId(String(id)) : null;
   }
 
+  private getAdminActor(admin: UserDocument) {
+    return {
+      actorRole: ConsultationConversationHistoryActorRole.ADMIN,
+      actorId: this.getUserId(admin),
+      actorName: String(admin.fullName || admin.username || admin.email || 'ادمین').slice(0, 80),
+    };
+  }
+
   private customerOwnerFilter(sessionTokenHash: string, user?: UserDocument | null) {
     const userId = this.getUserId(user);
     if (!userId) return { sessionTokenHash, userId: null };
@@ -158,6 +180,56 @@ export class ConsultationChatService implements OnModuleInit {
     conversation: ConsultationConversationDocument | Record<string, any>,
     forCustomer = false,
   ): ConversationSummary {
+    const storedHistory = Array.isArray(conversation.statusHistory)
+      ? conversation.statusHistory.map((event: Record<string, any>) => ({
+        action: event.action,
+        fromStatus: event.fromStatus || null,
+        toStatus: event.toStatus || null,
+        actorRole: event.actorRole,
+        actorId: forCustomer || !event.actorId ? null : String(event.actorId),
+        actorName: forCustomer && event.actorRole === ConsultationConversationHistoryActorRole.ADMIN
+          ? 'ادمین'
+          : event.actorName || '',
+        occurredAt: event.occurredAt || conversation.createdAt,
+      }))
+      : [];
+    const hasInitialEvent = storedHistory.some((event) => [
+      ConsultationConversationHistoryAction.CREATED,
+      ConsultationConversationHistoryAction.REQUESTED,
+      ConsultationConversationHistoryAction.OPENED,
+    ].includes(event.action));
+    const statusHistory: ConversationHistoryEvent[] = forCustomer
+      ? []
+      : [
+        ...(!hasInitialEvent
+          ? [{
+            action: ConsultationConversationHistoryAction.CREATED,
+            fromStatus: null,
+            toStatus: null,
+            actorRole: ConsultationConversationHistoryActorRole.SYSTEM,
+            actorId: null,
+            actorName: 'جزئیات پیش از فعال‌شدن تاریخچه ذخیره نشده',
+            occurredAt: conversation.createdAt,
+          }]
+          : []),
+        ...storedHistory,
+        ...(conversation.status === ConsultationConversationStatus.CLOSED && conversation.closedAt
+          && !storedHistory.some((event) => event.action === ConsultationConversationHistoryAction.CLOSED
+            && new Date(event.occurredAt).getTime() === new Date(conversation.closedAt).getTime())
+          ? [{
+            action: ConsultationConversationHistoryAction.CLOSED,
+            fromStatus: null,
+            toStatus: ConsultationConversationStatus.CLOSED,
+            actorRole: conversation.closedByAdminId || conversation.closedByAdminName
+              ? ConsultationConversationHistoryActorRole.ADMIN
+              : ConsultationConversationHistoryActorRole.SYSTEM,
+            actorId: conversation.closedByAdminId ? String(conversation.closedByAdminId) : null,
+            actorName: conversation.closedByAdminName || 'ادمین نامشخص',
+            occurredAt: conversation.closedAt,
+          }]
+          : []),
+      ];
+
     return {
       id: String(conversation._id),
       guestName: conversation.guestName || 'مشتری مهمان',
@@ -180,6 +252,7 @@ export class ConsultationChatService implements OnModuleInit {
         ? null
         : String(conversation.closedByAdminId),
       closedByAdminName: forCustomer ? '' : conversation.closedByAdminName || '',
+      statusHistory,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     };
@@ -290,15 +363,29 @@ export class ConsultationChatService implements OnModuleInit {
       const pendingToClose = guestPending.createdAt >= existingPending.createdAt
         ? existingPending
         : guestPending;
+      const closedAt = new Date();
       await this.conversationModel.updateOne(
         { _id: pendingToClose._id, status: ConsultationConversationStatus.PENDING },
-        { $set: {
-          status: ConsultationConversationStatus.CLOSED,
-          closedAt: new Date(),
-          closedByAdminId: null,
-          closedByAdminName: '',
-          unreadForAdmin: 0,
-        } },
+        {
+          $set: {
+            status: ConsultationConversationStatus.CLOSED,
+            closedAt,
+            closedByAdminId: null,
+            closedByAdminName: '',
+            unreadForAdmin: 0,
+          },
+          $push: {
+            statusHistory: {
+              action: ConsultationConversationHistoryAction.CLOSED,
+              fromStatus: ConsultationConversationStatus.PENDING,
+              toStatus: ConsultationConversationStatus.CLOSED,
+              actorRole: ConsultationConversationHistoryActorRole.SYSTEM,
+              actorId: null,
+              actorName: 'انتقال گفت‌وگوهای مهمان به حساب کاربری',
+              occurredAt: closedAt,
+            },
+          },
+        },
       ).exec();
       closedPendingIds.push(pendingToClose._id);
     }
@@ -334,6 +421,7 @@ export class ConsultationChatService implements OnModuleInit {
     const sessionTokenHash = this.getSessionHash(sessionToken);
     const subject = dto.subject.trim();
     const userId = this.getUserId(user);
+    const isAdminRequester = user?.role === UserRole.ADMIN;
     const fullName = user?.fullName?.trim();
     const guestName = userId
       ? fullName || user?.username?.trim() || user?.phone?.trim()
@@ -346,54 +434,94 @@ export class ConsultationChatService implements OnModuleInit {
     }
 
     const ownerFilter = this.customerOwnerFilter(sessionTokenHash, user);
-    const existingRequest = await this.conversationModel
-      .findOne({ ...ownerFilter, status: ConsultationConversationStatus.PENDING })
-      .sort({ createdAt: -1 })
-      .exec();
+    const existingRequest = isAdminRequester
+      ? null
+      : await this.conversationModel
+        .findOne({ ...ownerFilter, status: ConsultationConversationStatus.PENDING })
+        .sort({ createdAt: -1 })
+        .exec();
 
     const now = new Date();
-    const initialStatus = user?.role === UserRole.ADMIN
+    const initialStatus = isAdminRequester
       ? ConsultationConversationStatus.OPEN
       : ConsultationConversationStatus.PENDING;
     const closedConversations: RealtimeConversation[] = [];
-    if (existingRequest) {
+    if (!isAdminRequester && existingRequest) {
       const closedPendingRequest = await this.conversationModel.findOneAndUpdate(
         { _id: existingRequest._id, status: ConsultationConversationStatus.PENDING },
-        { $set: {
-          status: ConsultationConversationStatus.CLOSED,
-          closedAt: now,
-          closedByAdminId: null,
-          closedByAdminName: '',
-          unreadForAdmin: 0,
-        } },
+        {
+          $set: {
+            status: ConsultationConversationStatus.CLOSED,
+            closedAt: now,
+            closedByAdminId: null,
+            closedByAdminName: '',
+            unreadForAdmin: 0,
+          },
+          $push: {
+            statusHistory: {
+              action: ConsultationConversationHistoryAction.CLOSED,
+              fromStatus: ConsultationConversationStatus.PENDING,
+              toStatus: ConsultationConversationStatus.CLOSED,
+              actorRole: ConsultationConversationHistoryActorRole.CUSTOMER,
+              actorId: userId,
+              actorName: String(guestName).slice(0, 80),
+              occurredAt: now,
+            },
+          },
+        },
         { new: true },
       ).exec();
       if (closedPendingRequest) closedConversations.push(this.toRealtimeConversation(closedPendingRequest));
     }
 
-    const openFilter = {
-      $or: [
-        { sessionTokenHash },
-        ...(userId ? [{ userId }] : []),
-      ],
-      status: ConsultationConversationStatus.OPEN,
-    };
-    const openConversations = await this.conversationModel.find(openFilter).exec();
-    await this.conversationModel.updateMany(openFilter, {
-      $set: {
-        status: ConsultationConversationStatus.CLOSED,
-        closedAt: now,
-        closedByAdminId: null,
-        closedByAdminName: '',
-      },
-    });
-    closedConversations.push(...openConversations.map((conversation) => {
-      conversation.status = ConsultationConversationStatus.CLOSED;
-      conversation.closedAt = now;
-      conversation.closedByAdminId = null;
-      conversation.closedByAdminName = '';
-      return this.toRealtimeConversation(conversation);
-    }));
+    if (!isAdminRequester) {
+      const openFilter = {
+        $or: [
+          { sessionTokenHash },
+          ...(userId ? [{ userId }] : []),
+        ],
+        status: ConsultationConversationStatus.OPEN,
+      };
+      const openConversations = await this.conversationModel.find(openFilter).exec();
+      await this.conversationModel.updateMany(openFilter, {
+        $set: {
+          status: ConsultationConversationStatus.CLOSED,
+          closedAt: now,
+          closedByAdminId: null,
+          closedByAdminName: '',
+        },
+        $push: {
+          statusHistory: {
+            action: ConsultationConversationHistoryAction.CLOSED,
+            fromStatus: ConsultationConversationStatus.OPEN,
+            toStatus: ConsultationConversationStatus.CLOSED,
+            actorRole: ConsultationConversationHistoryActorRole.CUSTOMER,
+            actorId: userId,
+            actorName: String(guestName).slice(0, 80),
+            occurredAt: now,
+          },
+        },
+      }).exec();
+      closedConversations.push(...openConversations.map((conversation) => {
+        conversation.status = ConsultationConversationStatus.CLOSED;
+        conversation.closedAt = now;
+        conversation.closedByAdminId = null;
+        conversation.closedByAdminName = '';
+        conversation.statusHistory = [
+          ...(conversation.statusHistory || []),
+          {
+            action: ConsultationConversationHistoryAction.CLOSED,
+            fromStatus: ConsultationConversationStatus.OPEN,
+            toStatus: ConsultationConversationStatus.CLOSED,
+            actorRole: ConsultationConversationHistoryActorRole.CUSTOMER,
+            actorId: userId,
+            actorName: String(guestName).slice(0, 80),
+            occurredAt: now,
+          } as any,
+        ];
+        return this.toRealtimeConversation(conversation);
+      }));
+    }
 
     try {
       const conversation = await this.conversationModel.create({
@@ -407,6 +535,21 @@ export class ConsultationChatService implements OnModuleInit {
         guestProvince: user?.province?.trim() || '',
         guestCity: user?.city?.trim() || '',
         status: initialStatus,
+        statusHistory: [{
+          action: isAdminRequester
+            ? ConsultationConversationHistoryAction.OPENED
+            : ConsultationConversationHistoryAction.REQUESTED,
+          fromStatus: null,
+          toStatus: initialStatus,
+          ...(isAdminRequester
+            ? this.getAdminActor(user as UserDocument)
+            : {
+              actorRole: ConsultationConversationHistoryActorRole.CUSTOMER,
+              actorId: userId,
+              actorName: String(guestName).slice(0, 80),
+            }),
+          occurredAt: now,
+        }],
         lastMessageAt: now,
       });
       return {
@@ -415,7 +558,7 @@ export class ConsultationChatService implements OnModuleInit {
       };
     } catch (error: any) {
       if (error?.code !== 11000) throw error;
-      const pending = await this.conversationModel
+      const pending = isAdminRequester ? null : await this.conversationModel
         .findOne({ ...ownerFilter, status: ConsultationConversationStatus.PENDING })
         .sort({ createdAt: -1 })
         .exec();
@@ -466,16 +609,27 @@ export class ConsultationChatService implements OnModuleInit {
       .sort({ createdAt: -1 })
       .exec();
     if (existingPending) {
+      const now = new Date();
+      const actor = this.getAdminActor(admin);
       const promoted = await this.conversationModel.findOneAndUpdate(
         { _id: existingPending._id, status: ConsultationConversationStatus.PENDING },
         {
           $set: {
             status: ConsultationConversationStatus.OPEN,
             subject,
-            lastMessageAt: new Date(),
+            lastMessageAt: now,
             closedAt: null,
             closedByAdminId: null,
             closedByAdminName: '',
+          },
+          $push: {
+            statusHistory: {
+              action: ConsultationConversationHistoryAction.ACCEPTED,
+              fromStatus: ConsultationConversationStatus.PENDING,
+              toStatus: ConsultationConversationStatus.OPEN,
+              ...actor,
+              occurredAt: now,
+            },
           },
         },
         { new: true },
@@ -492,6 +646,7 @@ export class ConsultationChatService implements OnModuleInit {
     const sessionToken = randomBytes(32).toString('base64url');
     const sessionTokenHash = createHash('sha256').update(sessionToken).digest('hex');
     const now = new Date();
+    const actor = this.getAdminActor(admin);
     try {
       const conversation = await this.conversationModel.create({
         sessionTokenHash,
@@ -504,6 +659,13 @@ export class ConsultationChatService implements OnModuleInit {
         guestProvince: user.province?.trim() || '',
         guestCity: user.city?.trim() || '',
         status: ConsultationConversationStatus.OPEN,
+        statusHistory: [{
+          action: ConsultationConversationHistoryAction.OPENED,
+          fromStatus: null,
+          toStatus: ConsultationConversationStatus.OPEN,
+          ...actor,
+          occurredAt: now,
+        }],
         lastMessageAt: now,
       });
       return {
@@ -672,33 +834,35 @@ export class ConsultationChatService implements OnModuleInit {
     if (!conversations.length) return [];
 
     const closedAt = new Date();
-    const closedByAdminId = this.getUserId(admin);
-    const closedByAdminName = String(admin.fullName || 'ادمین').slice(0, 80);
-    await this.conversationModel.updateMany(
-      {
-        _id: { $in: conversations.map((conversation) => conversation._id) },
-        status: { $ne: ConsultationConversationStatus.CLOSED },
-      },
-      {
-        $set: {
-          status: ConsultationConversationStatus.CLOSED,
-          closedAt,
-          closedByAdminId,
-          closedByAdminName,
-          unreadForAdmin: 0,
+    const actor = this.getAdminActor(admin);
+    await this.conversationModel.bulkWrite(conversations.map((conversation) => ({
+      updateOne: {
+        filter: { _id: conversation._id, status: conversation.status },
+        update: {
+          $set: {
+            status: ConsultationConversationStatus.CLOSED,
+            closedAt,
+            closedByAdminId: actor.actorId,
+            closedByAdminName: actor.actorName,
+            unreadForAdmin: 0,
+          },
+          $push: {
+            statusHistory: {
+              action: ConsultationConversationHistoryAction.CLOSED,
+              fromStatus: conversation.status,
+              toStatus: ConsultationConversationStatus.CLOSED,
+              ...actor,
+              occurredAt: closedAt,
+            },
+          },
         },
       },
-    ).exec();
+    })));
 
-    return conversations.map((conversation) => {
-      conversation.status = ConsultationConversationStatus.CLOSED;
-      conversation.closedAt = closedAt;
-      conversation.closedByAdminId = closedByAdminId;
-      conversation.closedByAdminName = closedByAdminName;
-      conversation.unreadForAdmin = 0;
-      conversation.updatedAt = closedAt;
-      return this.toRealtimeConversation(conversation);
-    });
+    const changed = await this.conversationModel.find({
+      _id: { $in: conversations.map((conversation) => conversation._id) },
+    }).exec();
+    return changed.map((conversation) => this.toRealtimeConversation(conversation));
   }
 
   async bulkOpenAdminConversations(ids: string[], admin: UserDocument) {
@@ -715,19 +879,33 @@ export class ConsultationChatService implements OnModuleInit {
       .exec();
     if (!conversations.length) return [];
     const selectedObjectIds = conversations.map((conversation) => conversation._id);
-    const adminId = this.getUserId(admin);
-    const adminName = String(admin.fullName || 'ادمین').slice(0, 80);
     const now = new Date();
-    await this.conversationModel.updateMany(
-      { _id: { $in: selectedObjectIds }, status: { $in: [ConsultationConversationStatus.CLOSED, ConsultationConversationStatus.PENDING] } },
-      { $set: {
-        status: ConsultationConversationStatus.OPEN,
-        closedAt: null,
-        closedByAdminId: null,
-        closedByAdminName: '',
-        unreadForAdmin: 0,
-      } },
-    ).exec();
+    const actor = this.getAdminActor(admin);
+    await this.conversationModel.bulkWrite(conversations.map((conversation) => ({
+      updateOne: {
+        filter: { _id: conversation._id, status: conversation.status },
+        update: {
+          $set: {
+            status: ConsultationConversationStatus.OPEN,
+            closedAt: null,
+            closedByAdminId: null,
+            closedByAdminName: '',
+            unreadForAdmin: 0,
+          },
+          $push: {
+            statusHistory: {
+              action: conversation.status === ConsultationConversationStatus.PENDING
+                ? ConsultationConversationHistoryAction.ACCEPTED
+                : ConsultationConversationHistoryAction.REOPENED,
+              fromStatus: conversation.status,
+              toStatus: ConsultationConversationStatus.OPEN,
+              ...actor,
+              occurredAt: now,
+            },
+          },
+        },
+      },
+    })));
 
     const changed = await this.conversationModel.find({ _id: { $in: selectedObjectIds } }).exec();
     return changed.map((conversation) => this.toRealtimeConversation(conversation));
@@ -837,26 +1015,53 @@ export class ConsultationChatService implements OnModuleInit {
       throw new ForbiddenException('فقط ادمین می‌تواند وضعیت گفت‌وگوها را تغییر دهد.');
     }
     const conversation = await this.findAdminConversation(conversationId);
-    const adminId = this.getUserId(admin);
+    if (conversation.status === status) {
+      return {
+        conversation: this.toRealtimeConversation(conversation),
+        closedConversations: [],
+      };
+    }
+    const actor = this.getAdminActor(admin);
+    const previousStatus = conversation.status;
+    const now = new Date();
+    const action = status === ConsultationConversationStatus.CLOSED
+      ? ConsultationConversationHistoryAction.CLOSED
+      : previousStatus === ConsultationConversationStatus.PENDING
+        ? ConsultationConversationHistoryAction.ACCEPTED
+        : ConsultationConversationHistoryAction.REOPENED;
 
     const closedConversations: RealtimeConversation[] = [];
-    if (status === ConsultationConversationStatus.OPEN) {
-      conversation.status = ConsultationConversationStatus.OPEN;
-      conversation.closedAt = null;
-      conversation.closedByAdminId = null;
-      conversation.closedByAdminName = '';
-    } else if (status === ConsultationConversationStatus.CLOSED) {
-      conversation.status = status;
-      conversation.closedAt = new Date();
-      conversation.closedByAdminId = adminId;
-      conversation.closedByAdminName = String(admin.fullName || 'ادمین').slice(0, 80);
-    } else {
+    if (status !== ConsultationConversationStatus.OPEN && status !== ConsultationConversationStatus.CLOSED) {
       throw new BadRequestException('وضعیت درخواستی برای ادمین معتبر نیست.');
     }
-    conversation.unreadForAdmin = 0;
-    await conversation.save();
+    const update: Record<string, any> = {
+      $set: {
+        status,
+        unreadForAdmin: 0,
+        ...(status === ConsultationConversationStatus.OPEN
+          ? { closedAt: null, closedByAdminId: null, closedByAdminName: '' }
+          : { closedAt: now, closedByAdminId: actor.actorId, closedByAdminName: actor.actorName }),
+      },
+      $push: {
+        statusHistory: {
+        action,
+        fromStatus: previousStatus,
+        toStatus: status,
+        ...actor,
+        occurredAt: now,
+        },
+      },
+    };
+    const updatedConversation = await this.conversationModel.findOneAndUpdate(
+      { _id: conversation._id, status: previousStatus },
+      update,
+      { new: true },
+    ).exec();
+    if (!updatedConversation) {
+      throw new ConflictException('وضعیت گفت‌وگو همزمان تغییر کرده است؛ صفحه را تازه کن.');
+    }
     return {
-      conversation: this.toRealtimeConversation(conversation),
+      conversation: this.toRealtimeConversation(updatedConversation),
       closedConversations,
     };
   }

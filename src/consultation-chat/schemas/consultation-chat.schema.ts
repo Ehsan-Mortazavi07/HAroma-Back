@@ -15,6 +15,47 @@ export enum ConsultationMessageSender {
   ADMIN = 'admin',
 }
 
+export enum ConsultationConversationHistoryAction {
+  CREATED = 'created',
+  REQUESTED = 'requested',
+  ACCEPTED = 'accepted',
+  OPENED = 'opened',
+  REOPENED = 'reopened',
+  CLOSED = 'closed',
+}
+
+export enum ConsultationConversationHistoryActorRole {
+  CUSTOMER = 'customer',
+  ADMIN = 'admin',
+  SYSTEM = 'system',
+}
+
+@Schema({ _id: false })
+export class ConsultationConversationHistoryEntry {
+  @Prop({ type: String, enum: ConsultationConversationHistoryAction, required: true })
+  action!: ConsultationConversationHistoryAction;
+
+  @Prop({ type: String, enum: ConsultationConversationStatus, default: null })
+  fromStatus!: ConsultationConversationStatus | null;
+
+  @Prop({ type: String, enum: ConsultationConversationStatus, default: null })
+  toStatus!: ConsultationConversationStatus | null;
+
+  @Prop({ type: String, enum: ConsultationConversationHistoryActorRole, required: true })
+  actorRole!: ConsultationConversationHistoryActorRole;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  actorId?: Types.ObjectId | null;
+
+  @Prop({ trim: true, default: '', maxlength: 80 })
+  actorName!: string;
+
+  @Prop({ type: Date, default: Date.now })
+  occurredAt!: Date;
+}
+
+export const ConsultationConversationHistoryEntrySchema = SchemaFactory.createForClass(ConsultationConversationHistoryEntry);
+
 @Schema({ timestamps: true, autoIndex: false })
 export class ConsultationConversation {
   createdAt!: Date;
@@ -58,6 +99,9 @@ export class ConsultationConversation {
 
   @Prop({ trim: true, default: '', maxlength: 80 })
   closedByAdminName!: string;
+
+  @Prop({ type: [ConsultationConversationHistoryEntrySchema], default: [] })
+  statusHistory!: ConsultationConversationHistoryEntry[];
 
   @Prop({ trim: true, default: '' })
   lastMessageText!: string;
