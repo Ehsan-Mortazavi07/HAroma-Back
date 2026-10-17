@@ -87,6 +87,23 @@ export class OrdersService {
 
     const stockDeltas = this.sumOrderItemQuantities(processedItems);
 
+    // Fail early with a specific message; the atomic updates below remain the real guard.
+    for (const [key, quantity] of stockDeltas) {
+      const separatorIndex = key.indexOf(':');
+      const product = productsById.get(key.slice(0, separatorIndex));
+      const variantId = key.slice(separatorIndex + 1);
+      const variant = variantId ? product?.variants?.find((candidate) => candidate.id === variantId) : undefined;
+      const available = Math.max(0, (variant || product)?.stockCount ?? 0);
+      if (product && quantity > available) {
+        const title = variant?.title ? `${product.title} (${variant.title})` : product.title;
+        throw new BadRequestException(
+          available > 0
+            ? `از «${title}» فقط ${available.toLocaleString('fa-IR')} عدد موجود است؛ تعداد را در سبد خرید کم کنید.`
+            : `«${title}» در حال حاضر موجود نیست.`,
+        );
+      }
+    }
+
     // Free shipping threshold: 1,000,000 Tomans
     const shippingFee = subtotal >= 1000000 ? 0 : 45000;
 
