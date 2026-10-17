@@ -5,7 +5,7 @@ import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express
 import { createServer, type Server } from 'http';
 import type { Request, Response } from 'express';
 import { join } from 'path';
-import { json, urlencoded } from 'express';
+import { json, text, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ConsultationChatGateway } from './consultation-chat/consultation-chat.gateway';
@@ -88,6 +88,8 @@ async function createApplication(httpAdapter?: ExpressAdapter) {
 
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
+  // Analytics beacons are sent as text/plain to avoid CORS preflights.
+  app.use('/v1/analytics/collect', text({ type: 'text/plain', limit: '32kb' }));
   app.use((_request, response, next) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('X-Frame-Options', 'DENY');
