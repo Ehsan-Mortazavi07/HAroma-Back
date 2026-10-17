@@ -19,6 +19,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { SeedModule } from './seed/seed.module';
 import { ConsultationChatModule } from './consultation-chat/consultation-chat.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AdminSearchModule } from './admin-search/admin-search.module';
 import { validateEnvironment } from './config/environment';
 
 @Module({
@@ -53,6 +54,7 @@ import { validateEnvironment } from './config/environment';
     SeedModule,
     ConsultationChatModule,
     AnalyticsModule,
+    AdminSearchModule,
   ],
 })
 export class AppModule {}
