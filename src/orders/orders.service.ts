@@ -40,7 +40,7 @@ export class OrdersService {
     const productIds = [...new Set(createOrderDto.items.map((item) => item.product))];
     const products = await this.productModel
       .find({ _id: { $in: productIds }, deleted: false, isPublished: { $ne: false } })
-      .select('_id title price discountPrice images stockCount inStock variants deleted isPublished')
+      .select('_id title price discountPrice images stockCount inStock variants deleted isPublished minPurchaseQuantity maxPurchaseQuantity')
       .exec();
     const productsById = new Map(products.map((product) => [String(product._id), product]));
 
@@ -86,6 +86,25 @@ export class OrdersService {
     });
 
     const stockDeltas = this.sumOrderItemQuantities(processedItems);
+
+    // Per-product purchase rules set by the admin (applied to each product/variant line).
+    for (const [key, quantity] of stockDeltas) {
+      const product = productsById.get(key.slice(0, key.indexOf(':')));
+      if (!product) continue;
+      const min = Math.max(1, product.minPurchaseQuantity || 1);
+      const max = product.maxPurchaseQuantity || null;
+      const variantId = key.slice(key.indexOf(':') + 1);
+      const variant = variantId ? product.variants?.find((candidate) => candidate.id === variantId) : undefined;
+      const title = variant?.title ? `${product.title} (${variant.title})` : product.title;
+      if (quantity < min) {
+        throw new BadRequestException(`حداقل تعداد خرید «${title}» ${min.toLocaleString('fa-IR')} عدد است.`);
+      }
+      if (max && quantity > max) {
+        throw new BadRequestException(
+          `حداکثر تعداد خرید «${title}» در هر سفارش ${max.toLocaleString('fa-IR')} عدد است.`,
+        );
+      }
+    }
 
     // Fail early with a specific message; the atomic updates below remain the real guard.
     for (const [key, quantity] of stockDeltas) {

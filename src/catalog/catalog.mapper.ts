@@ -15,6 +15,8 @@ export function mapProductSummary(product: any) {
     attributes: product.attributes,
     stockCount: product.stockCount,
     inStock: product.inStock,
+    minPurchaseQuantity: product.minPurchaseQuantity ?? 1,
+    maxPurchaseQuantity: product.maxPurchaseQuantity ?? null,
     isVipOnly: product.isVipOnly,
     isFeatured: product.isFeatured,
     rating: product.rating,

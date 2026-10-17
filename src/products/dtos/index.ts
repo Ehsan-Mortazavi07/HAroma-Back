@@ -5,6 +5,8 @@ import {
   IsNumber,
   IsBoolean,
   IsArray,
+  IsInt,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -147,6 +149,18 @@ export class CreateProductDto {
   inStock?: boolean;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  minPurchaseQuantity?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxPurchaseQuantity?: number | null;
+
+  @IsOptional()
   @IsBoolean()
   isVipOnly?: boolean;
 
@@ -234,6 +248,18 @@ export class UpdateProductDto {
   @IsOptional()
   @IsBoolean()
   inStock?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  minPurchaseQuantity?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxPurchaseQuantity?: number | null;
 
   @IsOptional()
   @IsBoolean()

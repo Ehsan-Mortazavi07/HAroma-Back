@@ -124,6 +124,14 @@ export class Product {
   @Prop({ default: true })
   inStock!: boolean;
 
+  /** Smallest quantity of this product a customer may order (per cart line). */
+  @Prop({ default: 1, min: 1 })
+  minPurchaseQuantity!: number;
+
+  /** Largest quantity a customer may order in one order (per cart line); null = limited only by stock. */
+  @Prop({ type: Number, default: null, min: 1 })
+  maxPurchaseQuantity?: number | null;
+
   @Prop({ default: false })
   isVipOnly!: boolean;
 

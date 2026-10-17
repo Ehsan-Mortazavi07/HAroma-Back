@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
@@ -18,7 +18,14 @@ export class ProductsService {
     private attributesService: AttributesService,
   ) {}
 
+  private assertPurchaseLimits(min?: number | null, max?: number | null) {
+    if (min && max && min > max) {
+      throw new BadRequestException('حداقل تعداد خرید نمی‌تواند از حداکثر تعداد خرید بیشتر باشد.');
+    }
+  }
+
   async create(createProductDto: CreateProductDto): Promise<ProductDocument> {
+    this.assertPurchaseLimits(createProductDto.minPurchaseQuantity, createProductDto.maxPurchaseQuantity);
     const slug = createProductDto.slug.toLowerCase().trim();
     const existing = await this.productModel.findOne({ slug, deleted: false });
     if (existing) {
@@ -432,6 +439,11 @@ export class ProductsService {
       }
       delete (updateProductDto as any).brand;
     }
+
+    this.assertPurchaseLimits(
+      updateProductDto.minPurchaseQuantity ?? product.minPurchaseQuantity,
+      updateProductDto.maxPurchaseQuantity !== undefined ? updateProductDto.maxPurchaseQuantity : product.maxPurchaseQuantity,
+    );
 
     if (updateProductDto.stockCount !== undefined) {
       product.stockCount = updateProductDto.stockCount;
